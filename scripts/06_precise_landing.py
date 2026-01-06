@@ -1,7 +1,7 @@
 import gi
 gi.require_version("Gst", "1.0")
 gi.require_version("GstApp", "1.0")
-
+import argparse
 from gi.repository import Gst
 import numpy as np
 import cv2
@@ -59,8 +59,12 @@ pipeline.set_state(Gst.State.PLAYING)
 # ==========================================================
 # CONNECT VEHICLE
 # ==========================================================
+parser = argparse.ArgumentParser()
+parser.add_argument("--connect", required=True)
+args = parser.parse_args()
+
 log.info("Connecting to vehicle...")
-vehicle = connect("/dev/ttyACM0", baud=115200, wait_ready=True)
+vehicle = connect(args.connect, baud=115200, wait_ready=True)
 log.info("Connected")
 
 
@@ -127,7 +131,7 @@ SEARCH_ANG_VEL = 0.3
 SEARCH_TIMEOUT = 30.0
 
 # -------- RTL HANDOFF PARAMETERS --------
-RTL_FINAL_ALT_M = 1.0   # must match RTL_ALT_FINAL
+RTL_FINAL_ALT_M = 2.0   # must match RTL_ALT_FINAL
 RTL_ALT_TOL = 0.3       # meters
 
 
@@ -143,7 +147,7 @@ search_active = False
 search_start_time = None
 search_theta = 0.0
 
-rtl_complete = False
+rtl_complete = True
 
 
 # ==========================================================
