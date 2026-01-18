@@ -64,7 +64,7 @@ parser.add_argument("--connect", required=True)
 args = parser.parse_args()
 
 log.info("Connecting to vehicle...")
-vehicle = connect(args.connect, baud=115200, wait_ready=True)
+vehicle = connect(args.connect, baud=115200, wait_ready=False)
 log.info("Connected")
 
 
@@ -121,7 +121,6 @@ def check_angle_descend(ax, ay, limit):
 # ==========================================================
 STABLE_FRAMES = 15
 LOST_FRAMES_LIMIT = 20
-
 LANDING_Z_THRESHOLD = 30.0  # cm
 angle_descend = 20 * deg_2_rad
 land_speed_cms = 30.0
@@ -132,7 +131,12 @@ SEARCH_TIMEOUT = 30.0
 
 # -------- RTL HANDOFF PARAMETERS --------
 RTL_FINAL_ALT_M = 2.0   # must match RTL_ALT_FINAL
-RTL_ALT_TOL = 0.3       # meters
+RTL_ALT_TOL = 1.0       # meters
+
+#----------RTL FINISH DETECT PARAMETERS------
+RTL_RADIUS_M = 1.5
+RTL_STABLE_TIME = 3.0
+rtl_arrival_time = None
 
 
 # ==========================================================
@@ -147,7 +151,7 @@ search_active = False
 search_start_time = None
 search_theta = 0.0
 
-rtl_complete = True
+rtl_complete = False
 
 
 # ==========================================================
@@ -181,13 +185,36 @@ while True:
         marker_lost_count += 1
 
     # ---------------- RTL COMPLETION DETECTION ----------------
-    if (
-        vehicle.mode.name == "RTL"
-        and not rtl_complete
-        and abs(vehicle.location.global_relative_frame.alt - RTL_FINAL_ALT_M) <= RTL_ALT_TOL
-    ):
-        rtl_complete = True
-        log.info("RTL complete at final altitude")
+    # if (
+    #     vehicle.mode.name == "RTL"
+    #     and not rtl_complete
+    #     and abs(vehicle.location.global_relative_frame.alt - RTL_FINAL_ALT_M) <= RTL_ALT_TOL
+    # ):
+    #     rtl_complete = True
+    #     log.info("RTL complete at final altitude")
+
+    if vehicle.mode.name == "RTL" and not rtl_complete:
+        home = vehicle.home_location
+        loc = vehicle.location.global_relative_frame
+
+        if home is not None:
+            dN = (loc.lat - home.lat) * 111139.0
+            dE = (loc.lon - home.lon) * 111139.0
+            dist_xy = math.hypot(dN, dE)
+
+            RTL_FINAL_ALT_M = vehicle.parameters.get("RTL_ALT_FINAL", 0) / 100.0
+
+            alt_ok = abs(loc.alt - RTL_FINAL_ALT_M) <= RTL_ALT_TOL
+            pos_ok = dist_xy <= RTL_RADIUS_M
+
+            if alt_ok and pos_ok:
+                if rtl_arrival_time is None:
+                    rtl_arrival_time = time.time()
+                elif time.time() - rtl_arrival_time >= RTL_STABLE_TIME:
+                    rtl_complete = True
+                    log.info("RTL complete (home + altitude stable)")
+            else:
+                rtl_arrival_time = None
 
     # ---------------- RTL HANDOFF ----------------
     if rtl_complete and not landing_active and not search_active:
