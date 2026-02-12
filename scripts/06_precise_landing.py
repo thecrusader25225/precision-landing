@@ -76,7 +76,7 @@ camera_distortion = np.loadtxt("opencv/cameraDistortion.txt", delimiter=",")
 
 aruco = ArucoSingleTracker(
     id_to_find=72,
-    marker_size=11.3,  # cm
+    marker_size=10,  # cm
     camera_matrix=camera_matrix,
     camera_distortion=camera_distortion
 )
