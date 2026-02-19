@@ -20,7 +20,7 @@ def my_estimatePoseSingleMarkers(corners, marker_size, mtx, distortion):
             mtx,
             distortion,
             False,
-            cv2.SOLVEPNP_IPPE_SQUARE
+            cv2.SOLVEPNP_ITERATIVE
         )
         rvecs.append(rvec)
         tvecs.append(tvec)

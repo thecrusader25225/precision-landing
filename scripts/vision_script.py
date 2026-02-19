@@ -5,7 +5,7 @@ import cv2
 from gz.transport13 import Node
 from gz.msgs10.image_pb2 import Image
 from opencv.lib_aruco_pose import ArucoSingleTracker
-
+import math
 UDP_IP = "127.0.0.1"
 UDP_PORT = 9999
 
@@ -13,12 +13,30 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 latest_frame = None
 
-camera_matrix = np.loadtxt("opencv/cameraMatrix.txt", delimiter=",")
-camera_distortion = np.loadtxt("opencv/cameraDistortion.txt", delimiter=",")
+
+width = 1920
+height = 1080
+fov = 1.204
+
+fx = width / (2 * math.tan(fov/2))
+fy = fx
+cx = width / 2
+cy = height / 2
+
+camera_matrix = np.array([
+    [fx, 0, cx],
+    [0, fy, cy],
+    [0, 0, 1]
+])
+
+camera_distortion = np.zeros((5,1))
+
+# camera_matrix = np.loadtxt("opencv/cameraMatrix.txt", delimiter=",")
+# camera_distortion = np.loadtxt("opencv/cameraDistortion.txt", delimiter=",")
 
 aruco = ArucoSingleTracker(
     id_to_find=72,
-    marker_size=0.1,
+    marker_size=10.0,
     camera_matrix=camera_matrix,
     camera_distortion=camera_distortion
 )
