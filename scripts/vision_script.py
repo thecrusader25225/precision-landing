@@ -51,12 +51,31 @@ def callback(msg):
 
     found, x, y, z = aruco.track(img)
 
+    # --- SANITY FILTERS ---
+    if found:
+
+        # 1️⃣ Reject impossible depth
+        if z < 15 or z > 800.0:
+            found = False
+
+        # 2️⃣ Reject huge lateral jumps (tracker hallucination)
+        # tag must lie inside camera cone
+        max_lateral = z * 1.2
+        if abs(x) > max_lateral or abs(y) > max_lateral:
+            found = False
+
+        # 3️⃣ Reject pose that implies tag behind camera
+        if z <= 0:
+            found = False
+
     if found:
         data = struct.pack("ffff", 1.0, x, y, z)
     else:
         data = struct.pack("ffff", 0.0, 0.0, 0.0, 0.0)
 
     sock.sendto(data, (UDP_IP, UDP_PORT))
+    print("TAG:", found, x, y, z)
+
 
 
 node = Node()

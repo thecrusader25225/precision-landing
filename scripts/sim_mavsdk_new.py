@@ -55,7 +55,6 @@ async def run():
     drone = System()
     await drone.connect(system_address="udpin://0.0.0.0:14540")
 
-    # await arm_and_takeoff(drone, 4.0)
 
     print("Starting OFFBOARD")
 
