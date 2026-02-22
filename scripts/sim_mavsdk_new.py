@@ -26,28 +26,6 @@ MAX_SPEED = 0.7
 
 
 # -----------------------------
-# TAKEOFF
-# -----------------------------
-async def arm_and_takeoff(drone, alt=4.0):
-
-    print("Waiting for connection...")
-    async for s in drone.core.connection_state():
-        if s.is_connected:
-            break
-
-    print("Arming")
-    await drone.action.arm()
-
-    print("Takeoff")
-    await drone.action.takeoff()
-
-    async for pos in drone.telemetry.position():
-        if pos.relative_altitude_m >= alt * 0.95:
-            print("Reached target altitude")
-            break
-
-
-# -----------------------------
 # MAIN LOOP
 # -----------------------------
 async def run():
