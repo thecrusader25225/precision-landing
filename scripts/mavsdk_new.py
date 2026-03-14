@@ -3,7 +3,7 @@ import socket
 import struct
 import math
 from mavsdk import System
-from mavsdk.offboard import VelocityNedYaw, OffboardError
+from mavsdk.offboard import VelocityNedYaw
 
 
 # -----------------------------
@@ -25,7 +25,7 @@ KP_MOVE = 0.6
 MAX_SPEED = 0.7
 
 HOME_RADIUS = 1.0
-RTL_CAPTURE_HEIGHT = 5.0
+RTL_CAPTURE_HEIGHT = 8.0   # slightly higher for ArduPilot
 
 
 # -----------------------------
@@ -40,31 +40,36 @@ def distance_m(lat1, lon1, lat2, lon2):
 
 
 # -----------------------------
-# WAIT HELPERS (minimal)
+# SIMPLE CONNECTION WAIT
 # -----------------------------
 async def wait_for_connection(drone):
     async for s in drone.core.connection_state():
         if s.is_connected:
             break
 
-async def wait_for_global_position(drone):
-    async for health in drone.telemetry.health():
-        if health.is_global_position_ok:
-            break
 
+# -----------------------------
+# WAIT FOR MISSION END
+# Works for PX4 + ArduPilot
+# -----------------------------
 async def wait_for_mission_complete(drone):
     print("Waiting for mission...")
-    seen = False
+    seen_auto = False
+
     async for mode in drone.telemetry.flight_mode():
-        if mode.name == "MISSION":
-            seen = True
-        if seen and mode.name != "MISSION":
+
+        name = mode.name
+
+        if name in ["MISSION", "AUTO"]:
+            seen_auto = True
+
+        if seen_auto and name not in ["MISSION", "AUTO"]:
             print("Mission finished")
             return
 
 
 # -----------------------------
-# LANDING LOOP (UNCHANGED)
+# LANDING LOOP (UNCHANGED MATH)
 # -----------------------------
 async def precision_land(drone):
 
@@ -79,19 +84,21 @@ async def precision_land(drone):
             y_cam /= 100.0
             z_cam /= 100.0
         except BlockingIOError:
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.05)
             continue
 
         if found < 0.5:
             await drone.offboard.set_velocity_ned(
                 VelocityNedYaw(0,0,0,0)
             )
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.1)
             continue
 
+        # camera -> UAV frame
         x_uav = -y_cam
         y_uav =  x_cam
 
+        # get yaw
         async for att in drone.telemetry.attitude_euler():
             yaw = math.radians(att.yaw_deg)
             break
@@ -112,22 +119,21 @@ async def precision_land(drone):
         vy = max(min(vy, MAX_SPEED), -MAX_SPEED)
 
         vz = DESCENT_RATE if angle_total <= ANGLE_DESCEND else 0.0
-
+        print("vx :", vx,"vy: ", vy, "vz: ", vz)
         async for pos in drone.telemetry.position():
             altitude = pos.relative_altitude_m
             break
 
         if altitude < LAND_HEIGHT:
-            print("Switching to LAND")
-            await drone.offboard.stop()
-            await drone.action.land()
+            print("Switching to LAND mode")
+            await drone.action.set_flight_mode("LAND")
             return
 
         await drone.offboard.set_velocity_ned(
             VelocityNedYaw(vx, vy, vz, 0)
         )
 
-        await asyncio.sleep(0.03)
+        await asyncio.sleep(0.1)
 
 
 # -----------------------------
@@ -140,24 +146,27 @@ async def run():
 
     print("Waiting for connection...")
     await wait_for_connection(drone)
-    await wait_for_global_position(drone)
     print("Connected")
 
-    # SAVE HOME
-    async for home in drone.telemetry.home():
-        home_lat = home.latitude_deg
-        home_lon = home.longitude_deg
-        print("HOME SAVED:", home_lat, home_lon)
+    # give telemetry time to start (important for ArduPilot)
+    await asyncio.sleep(4)
+
+    # snapshot current position as HOME
+    async for pos in drone.telemetry.position():
+        home_lat = pos.latitude_deg
+        home_lon = pos.longitude_deg
+        print("HOME SNAPSHOT:", home_lat, home_lon)
         break
 
-    # WAIT MISSION
+    # wait for mission end
+    print("Waiting for mission to end")
     await wait_for_mission_complete(drone)
 
-    # CALL RTL
+    # trigger RTL
     print("Trigger RTL")
     await drone.action.return_to_launch()
 
-    # WAIT UNTIL NEAR HOME
+    # wait until near home
     while True:
 
         async for pos in drone.telemetry.position():
@@ -169,24 +178,24 @@ async def run():
         dist_home = distance_m(lat, lon, home_lat, home_lon)
 
         if altitude < RTL_CAPTURE_HEIGHT and dist_home < HOME_RADIUS:
-            print("Reached home → starting OFFBOARD landing")
+            print("Reached home → switching to GUIDED")
             break
 
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
 
-    # START OFFBOARD EXACTLY LIKE OLD SCRIPT
+    # switch to GUIDED for external control
+    await drone.action.set_flight_mode("GUIDED")
+    await asyncio.sleep(2)
+
+    print("External velocity control active")
+
+    # small neutral command before landing loop
     await drone.offboard.set_velocity_ned(
         VelocityNedYaw(0,0,0,0)
     )
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(1)
 
-    try:
-        await drone.offboard.start()
-    except OffboardError as e:
-        print("Offboard failed:", e)
-        return
-
-    # RUN SAME LANDING LOOP
+    # run landing loop
     await precision_land(drone)
 
 
