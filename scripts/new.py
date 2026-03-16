@@ -18,10 +18,10 @@ sock.setblocking(False)
 # -----------------------------
 # CONTROL PARAMETERS
 # -----------------------------
-KP_MOVE = 0.6          # proportional gain
+KP_MOVE = 0.15          # proportional gain
 MAX_SPEED = 0.1        # m/s clamp
-DESCENT_RATE = 0.4     # m/s downward
-ANGLE_DESCEND = 0.523599 # 30 deg
+DESCENT_RATE = 0.15     # m/s downward
+ANGLE_DESCEND = 0.349066 #20 deg
 LAND_HEIGHT = 0.5     # meters
 DEADBAND = 0.05               # 5 cm deadband
 
@@ -74,7 +74,7 @@ async def precision_land(drone):
         # - Image top aligned with drone nose
         # -----------------------------
         x_body = -y_cam   # forward/back
-        y_body =  x_cam   # right/left
+        y_body = x_cam   # right/left
 
         # -----------------------------
         # Deadband
@@ -94,7 +94,7 @@ async def precision_land(drone):
         # Proportional velocity control
         # -----------------------------
         #max_vel = 0.03 + 0.02 * z_cam   # scales with height
-        max_vel = min(0.4, 0.05 + 0.5 * z_cam)
+        max_vel = min(0.3, 0.05 + 0.5 * z_cam)
 
         vx = KP_MOVE * x_body
         vy = KP_MOVE * y_body
@@ -110,7 +110,7 @@ async def precision_land(drone):
         if angle_total <= ANGLE_DESCEND:
             vz = DESCENT_RATE
         else:
-            vz = 0.1   # slow descent while centering
+            vz = 0.0   # slow descent while centering
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
 
         # -----------------------------

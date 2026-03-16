@@ -31,6 +31,18 @@ cy = height / 2
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
 
+# --- scale calibration to current resolution ---
+calib_width = 3264
+calib_height = 2448
+
+scale_x = width / calib_width
+scale_y = height / calib_height
+
+camera_matrix[0,0] *= scale_x
+camera_matrix[1,1] *= scale_y
+camera_matrix[0,2] *= scale_x
+camera_matrix[1,2] *= scale_y
+
 aruco = ArucoSingleTracker(
     id_to_find=72,
     marker_size=10.0,
