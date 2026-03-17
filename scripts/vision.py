@@ -31,7 +31,7 @@ cy = height / 2
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
 
-# --- scale calibration to current resolution ---
+# --- scale calibration to 8mp resolution ---
 calib_width = 3264
 calib_height = 2448
 

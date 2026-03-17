@@ -4,6 +4,7 @@ import struct
 import math
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
+from mavsdk.mission import MissionProgress
 
 # -----------------------------
 # UDP INPUT (from vision script)
@@ -18,12 +19,37 @@ sock.setblocking(False)
 # -----------------------------
 # CONTROL PARAMETERS
 # -----------------------------
-KP_MOVE = 0.15          # proportional gain
+KP_MOVE = 0.6          # proportional gain
 MAX_SPEED = 0.1        # m/s clamp
-DESCENT_RATE = 0.15     # m/s downward
-ANGLE_DESCEND = 0.349066 #20 deg
+DESCENT_RATE = 0.4     # m/s downward
+ANGLE_DESCEND = 0.523599 # 30 deg
 LAND_HEIGHT = 0.5     # meters
-DEADBAND = 0.02              # 2 cm deadband
+DEADBAND = 0.05               # 5 cm deadband
+
+# MISSION FINISH CHECK
+async def wait_for_mission_and_rtl(drone):
+
+    print("Waiting for mission to finish...")
+
+    async for progress in drone.mission.mission_progress():
+        print(f"Mission progress: {progress.current}/{progress.total}")
+
+        if progress.current == progress.total and progress.total != 0:
+            print("Mission finished → RTL")
+            await drone.action.return_to_launch()
+            break
+
+# WAIT UNTIL DRONE REACHES HOME
+async def wait_until_home(drone):
+
+    print("Waiting until drone reaches home...")
+
+    async for pos in drone.telemetry.position():
+        altitude = pos.relative_altitude_m
+
+        if altitude < 5:  # near home altitude
+            print("Drone near home → starting precision landing")
+            break
 
 # -----------------------------
 # PRECISION LANDING LOOP
@@ -74,7 +100,7 @@ async def precision_land(drone):
         # - Image top aligned with drone nose
         # -----------------------------
         x_body = -y_cam   # forward/back
-        y_body = x_cam   # right/left
+        y_body =  x_cam   # right/left
 
         # -----------------------------
         # Deadband
@@ -93,18 +119,24 @@ async def precision_land(drone):
         # -----------------------------
         # Proportional velocity control
         # -----------------------------
-        max_vel = min(0.3, 0.05 + 0.5 * z_cam)
+        #max_vel = 0.03 + 0.02 * z_cam   # scales with height
+        max_vel = min(0.4, 0.05 + 0.5 * z_cam)
 
         vx = KP_MOVE * x_body
         vy = KP_MOVE * y_body
 
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
+        # Clamp speeds
+        #vx = max(min(vx, MAX_SPEED), -MAX_SPEED)
+        #vy = max(min(vy, MAX_SPEED), -MAX_SPEED)
 
+        # Descend only when centered
+        #vz = DESCENT_RATE if angle_total <= ANGLE_DESCEND else 0.0
         if angle_total <= ANGLE_DESCEND:
             vz = DESCENT_RATE
         else:
-            vz = 0.0   # slow descent while centering
+            vz = 0.1   # slow descent while centering
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
 
         # -----------------------------
@@ -143,25 +175,29 @@ async def run():
             break
     print("Connected")
 
-    # Allow telemetry to stabilize (important for ArduPilot)
     await asyncio.sleep(4)
 
-    # Send initial neutral setpoint (required before offboard.start())
+    # Wait for mission completion
+    await wait_for_mission_and_rtl(drone)
+
+    # Wait until drone returns home
+    await wait_until_home(drone)
+
+    # Send initial neutral setpoint
     await drone.offboard.set_velocity_body(
         VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
     )
 
     await asyncio.sleep(0.2)
 
-    # Start offboard mode
+    # Start offboard
     await drone.offboard.start()
     print("Offboard mode started")
 
     await asyncio.sleep(1)
 
-    # Run landing
+    # Run precision landing
     await precision_land(drone)
-
 
 if __name__ == "__main__":
     asyncio.run(run())
