@@ -20,11 +20,11 @@ sock.setblocking(False)
 # CONTROL PARAMETERS
 # -----------------------------
 KP_MOVE = 0.15              # proportional gain
-MAX_SPEED = 0.3             # m/s clamp
+MAX_SPEED = 0.15             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
 ANGLE_DESCEND = 0.349066    # 20 deg
 LAND_HEIGHT = 0.5           # meters
-DEADBAND = 0.02             # 5 cm deadband
+DEADBAND = 0.02             # 2 cm deadband
 
 
 # DISTANCE FUNCTION
@@ -53,16 +53,9 @@ async def wait_for_mission_and_rtl(drone):
             break
 
 # WAIT UNTIL DRONE REACHES HOME
-async def wait_until_home(drone):
+async def wait_until_home(drone, home_lat, home_lon):
 
     print("Waiting until drone reaches home...")
-
-    # get home once
-    async for home in drone.telemetry.home():
-        home_lat = home.latitude_deg
-        home_lon = home.longitude_deg
-        print(f"Home Coords: {home_lat}, {home_lon}")
-        break
 
     async for pos in drone.telemetry.position():
 
@@ -198,11 +191,18 @@ async def run():
 
     await asyncio.sleep(4)
     
+    # get home once
+    async for home in drone.telemetry.home():
+        home_lat = home.latitude_deg
+        home_lon = home.longitude_deg
+        print(f"Home Coords: {home_lat}, {home_lon}")
+        break
+
     # Wait for mission completion
     await wait_for_mission_and_rtl(drone)
 
     # Wait until drone returns home
-    await wait_until_home(drone)
+    await wait_until_home(drone, home_lat, home_lon)
 
     # Send initial neutral setpoint
     await drone.offboard.set_velocity_body(

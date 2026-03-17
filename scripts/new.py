@@ -19,7 +19,7 @@ sock.setblocking(False)
 # CONTROL PARAMETERS
 # -----------------------------
 KP_MOVE = 0.15              # proportional gain
-MAX_SPEED = 0.3             # m/s clamp
+MAX_SPEED = 0.15             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
 ANGLE_DESCEND = 0.349066    #20 deg
 LAND_HEIGHT = 0.5           # meters
