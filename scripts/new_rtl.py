@@ -19,12 +19,25 @@ sock.setblocking(False)
 # -----------------------------
 # CONTROL PARAMETERS
 # -----------------------------
-KP_MOVE = 0.6          # proportional gain
-MAX_SPEED = 0.1        # m/s clamp
-DESCENT_RATE = 0.4     # m/s downward
-ANGLE_DESCEND = 0.523599 # 30 deg
-LAND_HEIGHT = 0.5     # meters
-DEADBAND = 0.05               # 5 cm deadband
+KP_MOVE = 0.15              # proportional gain
+MAX_SPEED = 0.3             # m/s clamp
+DESCENT_RATE = 0.15         # m/s downward
+ANGLE_DESCEND = 0.349066    # 20 deg
+LAND_HEIGHT = 0.5           # meters
+DEADBAND = 0.02             # 5 cm deadband
+
+
+# DISTANCE FUNCTION
+def distance_m(lat1, lon1, lat2, lon2):
+    R = 6371000  # Earth radius in meters
+
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    return R * c
 
 # MISSION FINISH CHECK
 async def wait_for_mission_and_rtl(drone):
@@ -35,7 +48,7 @@ async def wait_for_mission_and_rtl(drone):
         print(f"Mission progress: {progress.current}/{progress.total}")
 
         if progress.current == progress.total and progress.total != 0:
-            print("Mission finished → RTL")
+            print("Mission finished. Switching to RTL")
             await drone.action.return_to_launch()
             break
 
@@ -44,13 +57,27 @@ async def wait_until_home(drone):
 
     print("Waiting until drone reaches home...")
 
+    # get home once
+    async for home in drone.telemetry.home():
+        home_lat = home.latitude_deg
+        home_lon = home.longitude_deg
+        print(f"Home Coords: {home_lat}, {home_lon}")
+        break
+
     async for pos in drone.telemetry.position():
+
+        current_lat = pos.latitude_deg
+        current_lon = pos.longitude_deg
         altitude = pos.relative_altitude_m
 
-        if altitude < 5:  # near home altitude
+        dist = distance_m(current_lat, current_lon, home_lat, home_lon)
+
+        print(f"Distance from home: {dist:.2f}m | Alt: {altitude:.2f}m")
+
+        # condition
+        if dist < 2.0 and altitude < 5:
             print("Drone near home → starting precision landing")
             break
-
 # -----------------------------
 # PRECISION LANDING LOOP
 # -----------------------------
@@ -119,24 +146,18 @@ async def precision_land(drone):
         # -----------------------------
         # Proportional velocity control
         # -----------------------------
-        #max_vel = 0.03 + 0.02 * z_cam   # scales with height
-        max_vel = min(0.4, 0.05 + 0.5 * z_cam)
+        max_vel = min(MAX_SPEED, 0.05 + 0.5 * z_cam)
 
         vx = KP_MOVE * x_body
         vy = KP_MOVE * y_body
 
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
-        # Clamp speeds
-        #vx = max(min(vx, MAX_SPEED), -MAX_SPEED)
-        #vy = max(min(vy, MAX_SPEED), -MAX_SPEED)
 
-        # Descend only when centered
-        #vz = DESCENT_RATE if angle_total <= ANGLE_DESCEND else 0.0
         if angle_total <= ANGLE_DESCEND:
             vz = DESCENT_RATE
         else:
-            vz = 0.1   # slow descent while centering
+            vz = 0.0   # no descent while centering
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
 
         # -----------------------------
@@ -173,10 +194,10 @@ async def run():
     async for state in drone.core.connection_state():
         if state.is_connected:
             break
-    print("Connected")
+    print("Connected. Hold 4 seconds for stabilization...")
 
     await asyncio.sleep(4)
-
+    
     # Wait for mission completion
     await wait_for_mission_and_rtl(drone)
 
