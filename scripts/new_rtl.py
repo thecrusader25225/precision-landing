@@ -57,20 +57,26 @@ async def wait_until_home(drone, home_lat, home_lon):
 
     print("Waiting until drone reaches home...")
 
-    async for pos in drone.telemetry.position():
+    while True:
+        async for pos in drone.telemetry.position():
+            current_lat = pos.latitude_deg
+            current_lon = pos.longitude_deg
+            altitude = pos.relative_altitude_m
+            break
 
-        current_lat = pos.latitude_deg
-        current_lon = pos.longitude_deg
-        altitude = pos.relative_altitude_m
+        async for vel in drone.telemetry.velocity_ned():
+            speed_xy = math.sqrt(vel.north_m_s**2 + vel.east_m_s**2)
+            break
 
         dist = distance_m(current_lat, current_lon, home_lat, home_lon)
 
-        print(f"Distance from home: {dist:.2f}m | Alt: {altitude:.2f}m")
+        print(f"Dist: {dist:.2f} | Alt: {altitude:.2f} | Speed: {speed_xy:.2f}")
 
-        # condition
-        if dist < 2.0 and altitude < 5:
-            print("Drone near home → starting precision landing")
+        if dist < 2.0 and altitude < 7 and speed_xy < 0.3:
+            print("Stable near home. start precision landing")
             break
+
+        await asyncio.sleep(0.2)
 # -----------------------------
 # PRECISION LANDING LOOP
 # -----------------------------
