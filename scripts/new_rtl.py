@@ -47,7 +47,7 @@ async def wait_for_mission_and_rtl(drone):
     async for progress in drone.mission.mission_progress():
         print(f"Mission progress: {progress.current}/{progress.total}")
 
-        if progress.current == progress.total and progress.total != 0:
+        if progress.current >= progress.total - 1 and progress.total != 0:
             print("Mission finished. Switching to RTL")
             await drone.action.return_to_launch()
             break
@@ -205,7 +205,16 @@ async def run():
         break
 
     # Wait for mission completion
-    await wait_for_mission_and_rtl(drone)
+    while True:
+        is_finished = await drone.mission.is_mission_finished()
+        if is_finished:
+            print("Mission finished → triggering RTL")
+            try:
+                await drone.action.return_to_launch()
+            except Exception as e:
+                print(f"RTL may already be active: {e}")
+            break
+        await asyncio.sleep(1)  # prevent CPU spam
 
     # Wait until drone returns home
     await wait_until_home(drone, home_lat, home_lon)
