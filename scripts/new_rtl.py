@@ -205,16 +205,16 @@ async def run():
         break
 
     # Wait for mission completion
-    while True:
-        is_finished = await drone.mission.is_mission_finished()
-        if is_finished:
-            print("Mission finished → triggering RTL")
-            try:
-                await drone.action.return_to_launch()
-            except Exception as e:
-                print(f"RTL may already be active: {e}")
-            break
-        await asyncio.sleep(1)  # prevent CPU spam
+    # while True:
+    #     is_finished = await drone.mission.is_mission_finished()
+    #     if is_finished:
+    #         print("Mission finished → triggering RTL")
+    #         try:
+    #             await drone.action.return_to_launch()
+    #         except Exception as e:
+    #             print(f"RTL may already be active: {e}")
+    #         break
+    #     await asyncio.sleep(1)  # prevent CPU spam
 
     # Wait until drone returns home
     await wait_until_home(drone, home_lat, home_lon)
