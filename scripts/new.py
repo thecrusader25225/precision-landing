@@ -19,7 +19,7 @@ sock.setblocking(False)
 # CONTROL PARAMETERS
 # -----------------------------
 KP_MOVE = 0.15              # proportional gain
-MAX_SPEED = 0.25             # m/s clamp
+MAX_SPEED = 0.35             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
 ANGLE_DESCEND = 0.349066    #20 deg
 LAND_HEIGHT = 0.5           # meters
@@ -129,6 +129,7 @@ async def precision_land(drone):
         # -----------------------------
         async for pos in drone.telemetry.position():
             altitude = pos.relative_altitude_m
+            print(f"ALtitude: {altitude}")
             break
 
         if altitude < LAND_HEIGHT:
