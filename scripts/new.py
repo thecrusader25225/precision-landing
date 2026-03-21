@@ -23,7 +23,7 @@ MAX_SPEED = 0.25             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
 ANGLE_DESCEND = 0.349066    #20 deg
 LAND_HEIGHT = 0.5           # meters
-DEADBAND = 0.02             # 2 cm deadband
+DEADBAND = 0.05             # 5 cm deadband
 
 # -----------------------------
 # PRECISION LANDING LOOP
@@ -93,22 +93,26 @@ async def precision_land(drone):
         # -----------------------------
         # Proportional velocity control
         # -----------------------------
-        max_vel = min(MAX_SPEED, 0.05 + 0.5 * z_cam)
-
-        # vx = KP_MOVE * x_body
-        # vy = KP_MOVE * y_body
-
+        # dynamic gain
         kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
 
         vx = kp_dynamic * x_body
         vy = kp_dynamic * y_body
 
-        # 🔥 ADD THIS
+        # error magnitude
         error_mag = math.sqrt(x_body**2 + y_body**2)
+
+        # 🔥 scale for large errors
         if error_mag > 0.3:
             scale = min(2.0, error_mag / 0.3)
             vx *= scale
             vy *= scale
+
+        # 🔥 adaptive clamp
+        base_vel = 0.05 + 0.5 * z_cam
+        boost = min(0.3, error_mag)
+
+        max_vel = min(MAX_SPEED + boost, base_vel + boost)
 
         # clamp
         vx = max(min(vx, max_vel), -max_vel)
