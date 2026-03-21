@@ -45,7 +45,7 @@ camera_matrix[1,2] *= scale_y
 
 aruco = ArucoSingleTracker(
     id_to_find=72,
-    marker_size=10.0,
+    marker_size=15.0,
     camera_matrix=camera_matrix,
     camera_distortion=camera_distortion
 )
