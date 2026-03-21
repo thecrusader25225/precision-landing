@@ -29,7 +29,8 @@ DEADBAND = 0.05             # 5 cm deadband
 # PRECISION LANDING LOOP
 # -----------------------------
 async def precision_land(drone):
-
+    last_seen_time = time.time()
+    last_x, last_y, last_z = 0.0, 0.0, 0.0
     print("Starting precision landing")
 
     while True:
@@ -58,13 +59,13 @@ async def precision_land(drone):
         # -----------------------------
         # If tag not found → hover
         # -----------------------------
-        if found < 0.5:
-            await drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-            )
-            print("NO TAG")
-            await asyncio.sleep(0.1)
-            continue
+        # if found < 0.5:
+        #     await drone.offboard.set_velocity_body(
+        #         VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+        #     )
+        #     print("NO TAG")
+        #     await asyncio.sleep(0.1)
+        #     continue
         
         
         # -----------------------------
@@ -75,6 +76,22 @@ async def precision_land(drone):
         # -----------------------------
         x_body = -y_cam   # forward/back
         y_body = x_cam   # right/left
+
+        current_time = time.time()
+
+        if found >= 0.5:
+            last_seen_time = current_time
+            last_x = x_body
+            last_y = y_body
+            last_z = z_cam
+
+        time_since_seen = current_time - last_seen_time
+
+        if found < 0.5:
+            x_body = last_x
+            y_body = last_y
+            z_cam = last_z   # optional but useful
+            print("SHORT LOSS → continuing")
 
         # -----------------------------
         # Deadband
