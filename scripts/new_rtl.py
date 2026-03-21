@@ -145,11 +145,14 @@ async def precision_land(drone):
         # -----------------------------
         # Proportional velocity control
         # -----------------------------
-        max_vel = min(MAX_SPEED, 0.05 + 0.5 * z_cam)
+        max_vel = min(MAX_SPEED, 0.05 + 0.3 * z_cam)
 
         vx = KP_MOVE * x_body
         vy = KP_MOVE * y_body
+        kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
 
+        vx = kp_dynamic * x_body
+        vy = kp_dynamic * y_body
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
@@ -195,7 +198,7 @@ async def run():
             break
     print("Connected. Hold 4 seconds for stabilization...")
 
-    await asyncio.sleep(4)
+    await asyncio.sleep(1)
     
     # get home once
     async for home in drone.telemetry.home():
