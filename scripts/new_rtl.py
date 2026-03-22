@@ -5,7 +5,7 @@ import math
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
 from mavsdk.mission import MissionProgress
-
+import time
 # -----------------------------
 # UDP INPUT (from vision script)
 # -----------------------------
@@ -81,7 +81,8 @@ async def wait_until_home(drone, home_lat, home_lon):
 # PRECISION LANDING LOOP
 # -----------------------------
 async def precision_land(drone):
-
+    last_seen_time = time.time()
+    last_x, last_y, last_z = 0.0, 0.0, 0.0
     print("Starting precision landing")
 
     while True:
@@ -110,13 +111,13 @@ async def precision_land(drone):
         # -----------------------------
         # If tag not found → hover
         # -----------------------------
-        if found < 0.5:
-            await drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-            )
-            print("NO TAG")
-            await asyncio.sleep(0.1)
-            continue
+        # if found < 0.5:
+        #     await drone.offboard.set_velocity_body(
+        #         VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+        #     )
+        #     print("NO TAG")
+        #     await asyncio.sleep(0.1)
+        #     continue
         
         
         # -----------------------------
@@ -126,7 +127,25 @@ async def precision_land(drone):
         # - Image top aligned with drone nose
         # -----------------------------
         x_body = -y_cam   # forward/back
-        y_body =  x_cam   # right/left
+        y_body = x_cam   # right/left
+        if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
+            print("OUTLIER → ignored")
+            continue
+        current_time = time.time()
+
+        if found >= 0.5:
+            last_seen_time = current_time
+            last_x = x_body
+            last_y = y_body
+            last_z = z_cam
+
+        time_since_seen = current_time - last_seen_time
+
+        if found < 0.5:
+            x_body = last_x
+            y_body = last_y
+            z_cam = last_z   # optional but useful
+            print("SHORT LOSS → continuing")
 
         # -----------------------------
         # Deadband
@@ -145,14 +164,28 @@ async def precision_land(drone):
         # -----------------------------
         # Proportional velocity control
         # -----------------------------
-        max_vel = min(MAX_SPEED, 0.05 + 0.3 * z_cam)
-
-        vx = KP_MOVE * x_body
-        vy = KP_MOVE * y_body
+        # dynamic gain
         kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
 
         vx = kp_dynamic * x_body
         vy = kp_dynamic * y_body
+
+        # error magnitude
+        error_mag = math.sqrt(x_body**2 + y_body**2)
+
+        # 🔥 scale for large errors
+        if error_mag > 0.3:
+            scale = min(2.0, error_mag / 0.3)
+            vx *= scale
+            vy *= scale
+
+        # 🔥 adaptive clamp
+        base_vel = 0.05 + 0.5 * z_cam
+        boost = min(0.3, error_mag)
+
+        max_vel = min(MAX_SPEED + boost, base_vel + boost)
+
+        # clamp
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
@@ -169,7 +202,7 @@ async def precision_land(drone):
             altitude = pos.relative_altitude_m
             break
 
-        if altitude < LAND_HEIGHT:
+        if z_cam < 0.3 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
@@ -182,7 +215,6 @@ async def precision_land(drone):
         )
 
         await asyncio.sleep(0.1)
-
 
 # -----------------------------
 # MAIN
