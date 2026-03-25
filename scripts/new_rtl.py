@@ -126,7 +126,7 @@ async def precision_land(drone):
         # - Downward-facing camera
         # - Image top aligned with drone nose
         # -----------------------------
-        x_body = -y_cam   # forward/back
+        x_body = -y_cam - 7   # forward/back
         y_body = x_cam   # right/left
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
             print("OUTLIER → ignored")
@@ -202,7 +202,7 @@ async def precision_land(drone):
             altitude = pos.relative_altitude_m
             break
 
-        if z_cam < 0.3 and z_cam >0.1:
+        if z_cam < 0.20 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return

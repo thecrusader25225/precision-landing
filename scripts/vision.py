@@ -155,11 +155,11 @@ while True:
     )
     yaw_error=0
     if f1 > 0.5 and f2 > 0.5:
-        dx = x1 - x2
+        dx = (x1 - x2)
         dy = y1 - y2
 
         # camera forward = -y_cam → mapped to x_body
-        yaw_error = math.atan2(dx, -dy)
+        yaw_error = math.atan2(dx, -dy)*180/math.pi
         yaw_valid = True
         
 
