@@ -19,7 +19,7 @@ sock.setblocking(False)
 # CONTROL PARAMETERS
 # -----------------------------
 KP_MOVE = 0.15              # proportional gain
-MAX_SPEED = 0.35             # m/s clamp
+MAX_SPEED = 0.25             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
 ANGLE_DESCEND = 0.349066    #20 deg
 LAND_HEIGHT = 0.5           # meters
@@ -47,27 +47,25 @@ async def precision_land(drone):
                 await asyncio.sleep(0.02)
                 continue
 
-            packet_id, found, x_cam, y_cam, z_cam = struct.unpack("Iffff", latest)
+            packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
         
         
-        print(f"TAG: ",packet_id, found, x_cam, y_cam, z_cam)
+        print(f"TAG: ",packet_id, f72, x72, y72, z72, fX, xX, yX, zX)
+
+        # -----------------------------
+        # Choose landing tag
+        # -----------------------------
+        if f72 > 0.5:
+            found = True
+            x_cam, y_cam, z_cam = x72, y72, z72
+        else:
+            found = False
+
         # convert cm → meters
         x_cam /= 100.0
         y_cam /= 100.0
         z_cam /= 100.0
 
-        # -----------------------------
-        # If tag not found → hover
-        # -----------------------------
-        # if found < 0.5:
-        #     await drone.offboard.set_velocity_body(
-        #         VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-        #     )
-        #     print("NO TAG")
-        #     await asyncio.sleep(0.1)
-        #     continue
-        
-        
         # -----------------------------
         # OpenCV camera → UAV BODY frame
         # Assumes:
@@ -76,7 +74,9 @@ async def precision_land(drone):
         # -----------------------------
         x_body = -y_cam   # forward/back
         y_body = x_cam   # right/left
-
+        if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
+            print("OUTLIER → ignored")
+            continue
         current_time = time.time()
 
         if found >= 0.5:
@@ -92,6 +92,20 @@ async def precision_land(drone):
             y_body = last_y
             z_cam = last_z   # optional but useful
             print("SHORT LOSS → continuing")
+
+        # -----------------------------
+        # YAW from 2-tag geometry
+        # -----------------------------
+        yaw_error = 0.0
+        yaw_valid = False
+
+        if f72 > 0.5 and fX > 0.5:
+            dx = xX - x72
+            dy = yX - y72
+
+            # camera forward = -y_cam → mapped to x_body
+            yaw_error = math.atan2(dx, -dy)
+            yaw_valid = True
 
         # -----------------------------
         # Deadband
@@ -136,9 +150,12 @@ async def precision_land(drone):
         vy = max(min(vy, max_vel), -max_vel)
 
         if angle_total <= ANGLE_DESCEND:
-            vz = DESCENT_RATE
+            if yaw_valid and abs(yaw_error) > math.radians(10):
+                vz = 0.0   # wait for yaw alignment
+            else:
+                vz = DESCENT_RATE
         else:
-            vz = 0.0   # no descent while centering
+            vz = 0.0
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
 
         # -----------------------------
@@ -146,168 +163,39 @@ async def precision_land(drone):
         # -----------------------------
         async for pos in drone.telemetry.position():
             altitude = pos.relative_altitude_m
-            print(f"ALtitude: {altitude}")
             break
 
-        if altitude < LAND_HEIGHT:
+        if z_cam < 0.3 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
 
         # -----------------------------
+        # Yaw control
+        # -----------------------------
+        yaw_rate = 0.0
+
+        if yaw_valid:
+            KP_YAW = 1.5
+
+            # only yaw when roughly centered (prevents chaos)
+            if abs(x_body) < 0.2 and abs(y_body) < 0.2:
+                yaw_rate = math.degrees(KP_YAW * yaw_error)
+
+                # clamp (deg/sec)
+                yaw_rate = max(min(yaw_rate, 30.0), -30.0)
+
+        # if no valid yaw → stop rotation
+        else:
+            yaw_rate = 0.0
+        # -----------------------------
         # Send BODY velocity
         # -----------------------------
         await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(vx, vy, vz, 0.0)
+            VelocityBodyYawspeed(vx, vy, vz, yaw_rate)
         )
 
         await asyncio.sleep(0.1)
-
-# async def precision_land(drone):
-
-#     last_seen_time = time.time()
-#     last_x, last_y = 0.0, 0.0
-
-#     print("Starting precision landing")
-
-#     while True:
-
-#         latest = None
-
-#         # -----------------------------
-#         # Get latest UDP packet
-#         # -----------------------------
-#         while True:
-#             try:
-#                 data, _ = sock.recvfrom(1024)
-#                 latest = data
-#             except BlockingIOError:
-#                 break
-
-#         # If no packet at all → just wait
-#         if latest is None:
-#             await asyncio.sleep(0.02)
-#             continue
-
-#         packet_id, found, x_cam, y_cam, z_cam = struct.unpack("Iffff", latest)
-
-#         print(f"TAG: {packet_id}, {found}, {x_cam}, {y_cam}, {z_cam}")
-
-#         # Convert cm → meters
-#         x_cam /= 100.0
-#         y_cam /= 100.0
-#         z_cam /= 100.0
-
-#         current_time = time.time()
-
-#         # -----------------------------
-#         # Camera → BODY frame
-#         # -----------------------------
-#         x_body = -y_cam
-#         y_body = x_cam
-
-#         # -----------------------------
-#         # Update memory if tag visible
-#         # -----------------------------
-#         if found >= 0.5:
-#             last_seen_time = current_time
-#             last_x = x_body
-#             last_y = y_body
-
-#         time_since_seen = current_time - last_seen_time
-
-#         # -----------------------------
-#         # NO TAG HANDLING
-#         # -----------------------------
-#         if found < 0.5:
-
-#             # Short loss → continue toward last known position
-#             if time_since_seen < 0.7 and (last_x != 0.0 or last_y != 0.0):
-#                 x_body = last_x
-#                 y_body = last_y
-#                 vz = 0.0
-
-#             # Medium loss → hover
-#             elif time_since_seen < 2.0:
-#                 await drone.offboard.set_velocity_body(
-#                     VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-#                 )
-#                 await asyncio.sleep(0.1)
-#                 continue
-
-#             # Long loss → slow ascend
-#             else:
-#                 await drone.offboard.set_velocity_body(
-#                     VelocityBodyYawspeed(0.0, 0.0, -0.2, 0.0)
-#                 )
-#                 await asyncio.sleep(0.1)
-#                 continue
-
-#         # -----------------------------
-#         # Deadband
-#         # -----------------------------
-#         if abs(x_body) < DEADBAND:
-#             x_body = 0.0
-#         if abs(y_body) < DEADBAND:
-#             y_body = 0.0
-
-#         # -----------------------------
-#         # Angle check (for descent gating)
-#         # -----------------------------
-#         angle_x = math.atan2(x_body, z_cam)
-#         angle_y = math.atan2(y_body, z_cam)
-#         angle_total = math.sqrt(angle_x**2 + angle_y**2)
-
-#         print(f"Angle: {math.degrees(angle_total):.1f}")
-
-#         # -----------------------------
-#         # Height-aware proportional control
-#         # -----------------------------
-#         kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
-
-#         vx = kp_dynamic * x_body
-#         vy = kp_dynamic * y_body
-
-#         # Light damping (reduces oscillation)
-#         vx *= 0.9
-#         vy *= 0.9
-
-#         # Velocity scaling with height
-#         max_vel = min(MAX_SPEED, 0.05 + 0.3 * z_cam)
-
-#         vx = max(min(vx, max_vel), -max_vel)
-#         vy = max(min(vy, max_vel), -max_vel)
-
-#         # -----------------------------
-#         # Descent logic
-#         # -----------------------------
-#         if angle_total <= ANGLE_DESCEND:
-#             vz = min(DESCENT_RATE, 0.4 * z_cam)
-#         else:
-#             vz = 0.0
-
-#         print(f"vx: {vx:.2f}, vy: {vy:.2f}, vz: {vz:.2f}")
-
-#         # -----------------------------
-#         # Check altitude
-#         # -----------------------------
-#         async for pos in drone.telemetry.position():
-#             altitude = pos.relative_altitude_m
-#             break
-
-#         if altitude < LAND_HEIGHT:
-#             print("Switching to LAND mode")
-#             await drone.action.land()
-#             return
-
-#         # -----------------------------
-#         # Send velocity command
-#         # -----------------------------
-#         await drone.offboard.set_velocity_body(
-#             VelocityBodyYawspeed(vx, vy, vz, 0.0)
-#         )
-
-#         await asyncio.sleep(0.1)
 
 # -----------------------------
 # MAIN
@@ -326,6 +214,7 @@ async def run():
     # Allow telemetry to stabilize (important for ArduPilot)
     await asyncio.sleep(4)
 
+    
     # Send initial neutral setpoint (required before offboard.start())
     await drone.offboard.set_velocity_body(
         VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
