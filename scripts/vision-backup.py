@@ -110,49 +110,32 @@ while True:
     # -----------------------------
     # ARUCO TRACKING (UNCHANGED)
     # -----------------------------
-    detections = aruco.track(frame)
+    found, x, y, z = aruco.track(frame)
 
-    tag72 = detections.get(72, None)
-    tagX  = detections.get(10, None)  # your orientation tag
+    if found:
 
-    def valid(tag):
-        if tag is None:
-            return None
+        # depth sanity
+        if z > 800:
+            found = False
 
-        x, y, z = tag
-
-        if z <= 0 or z > 800:
-            return None
-
+        # lateral sanity
         max_lateral = z * 5.0
         if abs(x) > max_lateral or abs(y) > max_lateral:
-            return None
+            found = False
 
-        return (x, y, z)
+        # behind camera
+        if z <= 0:
+            found = False
 
-    tag72 = valid(tag72)
-    tagX  = valid(tagX)
     # -----------------------------
     # SEND UDP
     # -----------------------------
-    packet_id += 1
-
-    if tag72:
-        f1, x1, y1, z1 = 1.0, *tag72
+    packet_id +=1
+    if found:
+        data = struct.pack("Iffff",packet_id, 1.0, x, y, z)
     else:
-        f1, x1, y1, z1 = 0.0, 0.0, 0.0, 0.0
-
-    if tagX:
-        f2, x2, y2, z2 = 1.0, *tagX
-    else:
-        f2, x2, y2, z2 = 0.0, 0.0, 0.0, 0.0
-
-    data = struct.pack(
-        "Iffffffff",
-        packet_id,
-        f1, x1, y1, z1,
-        f2, x2, y2, z2
-    )
+        data = struct.pack("Iffff",packet_id, 0.0, 0.0, 0.0, 0.0)
 
     sock.sendto(data, (UDP_IP, UDP_PORT))
-    print(f"72: {f1}, {x1} {y1} {z1}\nX: {f2}, {x2} {y2} {z2}")
+
+    print("TAG:",packet_id, found, x, y, z)

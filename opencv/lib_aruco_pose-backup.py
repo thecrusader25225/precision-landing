@@ -40,14 +40,18 @@ class ArucoSingleTracker:
         self._detector = aruco.ArucoDetector(self._dictionary, self._parameters)
 
     def track(self, frame, verbose=False):
+        """
+        frame must be BGRA (from Picamera2)
+        """
+        marker_found = False
+        x = y = z = 0.0
+
+        # IMPORTANT FIX — XBGR → GRAY
         gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
 
         corners, ids, _ = self._detector.detectMarkers(gray)
 
-        results = {}
-
-        if ids is not None:
-
+        if ids is not None and self.id_to_find in ids:
             rvecs, tvecs, _ = my_estimatePoseSingleMarkers(
                 corners,
                 self.marker_size,
@@ -55,13 +59,11 @@ class ArucoSingleTracker:
                 self._camera_distortion
             )
 
-            for i, marker_id in enumerate(ids.flatten()):
-                tvec = tvecs[i].flatten()
-                x, y, z = tvec
+            rvec, tvec = rvecs[0], tvecs[0]
+            x, y, z = tvec.flatten()
+            marker_found = True
 
-                results[int(marker_id)] = (x, y, z)
+            if verbose:
+                print(f"[ARUCO] x={x:.1f} y={y:.1f} z={z:.1f}")
 
-                if verbose:
-                    print(f"[ID {marker_id}] x={x:.1f} y={y:.1f} z={z:.1f}")
-
-        return results
+        return marker_found, x, y, z
