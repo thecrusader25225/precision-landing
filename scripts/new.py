@@ -51,7 +51,7 @@ async def precision_land(drone):
         
         
         print(f"TAG: ",packet_id, f72, x72, y72, z72, fX, xX, yX, zX)
-
+        x_cam, y_cam, z_cam = 0.0, 0.0, 0.0
         # -----------------------------
         # Choose landing tag
         # -----------------------------
