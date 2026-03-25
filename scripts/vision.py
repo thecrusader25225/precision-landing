@@ -153,6 +153,15 @@ while True:
         f1, x1, y1, z1,
         f2, x2, y2, z2
     )
+    yaw_error=0
+    if f1 > 0.5 and f2 > 0.5:
+        dx = x1 - x2
+        dy = y1 - y2
+
+        # camera forward = -y_cam → mapped to x_body
+        yaw_error = math.atan2(dx, -dy)
+        yaw_valid = True
+        
 
     sock.sendto(data, (UDP_IP, UDP_PORT))
-    print(f"72: {f1}, {x1} {y1} {z1}\nX: {f2}, {x2} {y2} {z2}")
+    print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}")
