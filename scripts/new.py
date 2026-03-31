@@ -56,10 +56,10 @@ async def precision_land(drone):
         # Choose landing tag
         # -----------------------------
         if f72 > 0.5:
-            found = True
+            f72 = True
             x_cam, y_cam, z_cam = x72, y72, z72
         else:
-            found = False
+            f72 = False
 
         # convert cm → meters
         x_cam /= 100.0
@@ -74,12 +74,14 @@ async def precision_land(drone):
         # -----------------------------
         x_body = -y_cam   # forward/back
         y_body = x_cam   # right/left
+
+        # Noise filter
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
             print("OUTLIER → ignored")
             continue
         current_time = time.time()
 
-        if found >= 0.5:
+        if f72 >= 0.5:
             last_seen_time = current_time
             last_x = x_body
             last_y = y_body
@@ -87,7 +89,7 @@ async def precision_land(drone):
 
         time_since_seen = current_time - last_seen_time
 
-        if found < 0.5:
+        if f72 < 0.5:
             x_body = last_x
             y_body = last_y
             z_cam = last_z   # optional but useful
