@@ -5,6 +5,7 @@ import math
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
 from mavsdk.mission import MissionProgress
+from mavsdk.telemetry import FlightMode
 import time
 # -----------------------------
 # UDP INPUT (from vision script)
@@ -52,31 +53,39 @@ def distance_m(lat1, lon1, lat2, lon2):
 #             await drone.action.return_to_launch()
 #             break
 
+async def get_flight_mode(drone):
+    async for mode in drone.telemetry.flight_mode():
+        return mode
+
 # WAIT UNTIL DRONE REACHES HOME
-async def wait_until_home(drone, home_lat, home_lon):
+# async def wait_until_home(drone, home_lat, home_lon):
 
-    print("Waiting until drone reaches home...")
+#     print("Waiting until drone reaches home...")
 
-    while True:
-        async for pos in drone.telemetry.position():
-            current_lat = pos.latitude_deg
-            current_lon = pos.longitude_deg
-            altitude = pos.relative_altitude_m
-            break
+#     while True:
+#         async for pos in drone.telemetry.position():
+#             current_lat = pos.latitude_deg
+#             current_lon = pos.longitude_deg
+#             altitude = pos.relative_altitude_m
+#             break
 
-        async for vel in drone.telemetry.velocity_ned():
-            speed_xy = math.sqrt(vel.north_m_s**2 + vel.east_m_s**2)
-            break
+#         async for vel in drone.telemetry.velocity_ned():
+#             speed_xy = math.sqrt(vel.north_m_s**2 + vel.east_m_s**2)
+#             break
 
-        dist = distance_m(current_lat, current_lon, home_lat, home_lon)
+#         dist = distance_m(current_lat, current_lon, home_lat, home_lon)
 
-        print(f"Dist: {dist:.2f} | Alt: {altitude:.2f} | Speed: {speed_xy:.2f}")
+#         mode = await get_flight_mode(drone)
 
-        if dist < 2.0 and altitude < 7 and speed_xy < 0.3:
-            print("Stable near home. start precision landing")
-            break
+#         print(f"Mode: {mode} | Dist: {dist:.2f} | Alt: {altitude:.2f} | Speed: {speed_xy:.2f}")
+    
+#         is_rtl = mode == FlightMode.RETURN_TO_LAUNCH
 
-        await asyncio.sleep(0.2)
+#         if dist < 2.0 and altitude < 7 and speed_xy < 0.3 and is_rtl:
+#             print("Stable near home. start precision landing")
+#             break
+
+#         await asyncio.sleep(0.2)
 # -----------------------------
 # PRECISION LANDING LOOP
 # -----------------------------
@@ -108,10 +117,8 @@ async def precision_land(drone):
         # Choose landing tag
         # -----------------------------
         if f72 > 0.5:
-            f72 = True
             x_cam, y_cam, z_cam = x72, y72, z72
-        else:
-            f72 = False
+        
 
         # convert cm → meters
         x_cam /= 100.0
@@ -263,7 +270,7 @@ async def run():
     async for state in drone.core.connection_state():
         if state.is_connected:
             break
-    print("Connected. Hold 4 seconds for stabilization...")
+    print("Connected. Hold 1 second for stabilization...")
 
     await asyncio.sleep(1)
     
@@ -271,27 +278,60 @@ async def run():
     async for home in drone.telemetry.home():
         home_lat = home.latitude_deg
         home_lon = home.longitude_deg
-        print(f"Home Coords: {home_lat}, {home_lon}")
+        print(f"Home Set: {home_lat}, {home_lon}")
         break
+    
+    landing_active = False
+    rtl_detected = False
 
-    # Wait until drone returns home
-    await wait_until_home(drone, home_lat, home_lon)
+    while True:
+        # get telemetry
+        async for pos in drone.telemetry.position():
+            lat = pos.latitude_deg
+            lon = pos.longitude_deg
+            alt = pos.relative_altitude_m
+            break
 
-    # Send initial neutral setpoint
-    await drone.offboard.set_velocity_body(
-        VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-    )
+        async for vel in drone.telemetry.velocity_ned():
+            speed = math.sqrt(vel.north_m_s**2 + vel.east_m_s**2)
+            break
 
-    await asyncio.sleep(0.2)
+        mode = await get_flight_mode(drone)
 
-    # Start offboard
-    await drone.offboard.start()
-    print("Offboard mode started")
+        # -----------------------------
+        # STATE LOGIC
+        # -----------------------------
+        if mode == FlightMode.RETURN_TO_LAUNCH:
+            rtl_detected = True
+            print("RTL started")
 
-    await asyncio.sleep(1)
+        dist = distance_m(lat, lon, home_lat, home_lon)
 
-    # Run precision landing
-    await precision_land(drone)
+        near_home = dist < 2.0
+        stable = alt < 7 and speed < 0.3
+
+        print(f"Mode: {mode} | Dist: {dist:.2f} | Alt: {alt:.2f} | Speed: {speed:.2f}")
+
+        if rtl_detected and near_home and stable and not landing_active:
+            print("RTL + HOME → starting precision landing")
+
+            landing_active = True
+
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+            )
+
+            await asyncio.sleep(0.2)
+            await drone.offboard.start()
+
+            await precision_land(drone)
+
+            print("Landing done. Resetting state")
+
+            landing_active = False
+            rtl_detected = False
+
+        await asyncio.sleep(0.2)
 
 if __name__ == "__main__":
     asyncio.run(run())
