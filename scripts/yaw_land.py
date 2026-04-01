@@ -75,6 +75,20 @@ async def precision_land(drone):
         x_body = -y_cam   # forward/back
         y_body = x_cam   # right/left
 
+                # -----------------------------
+        # YAW from 2-tag geometry
+        # -----------------------------
+        yaw_error = 0.0
+        yaw_valid = False
+
+        if f72 > 0.5 and fX > 0.5:
+            dx = xX - x72
+            dy = yX - y72
+
+            # camera forward = -y_cam → mapped to x_body
+            yaw_error = math.atan2(dx, -dy)
+            yaw_valid = True
+
         # Noise filter
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
             print("OUTLIER → ignored")
@@ -95,19 +109,6 @@ async def precision_land(drone):
             z_cam = last_z   # optional but useful
             print("SHORT LOSS → continuing")
 
-        # -----------------------------
-        # YAW from 2-tag geometry
-        # -----------------------------
-        yaw_error = 0.0
-        yaw_valid = False
-
-        if f72 > 0.5 and fX > 0.5:
-            dx = xX - x72
-            dy = yX - y72
-
-            # camera forward = -y_cam → mapped to x_body
-            yaw_error = math.atan2(dx, -dy)
-            yaw_valid = True
 
         # -----------------------------
         # Deadband
@@ -151,11 +152,30 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
-        if angle_total <= ANGLE_DESCEND:
-            if yaw_valid and abs(yaw_error) > math.radians(10):
-                vz = 0.0   # wait for yaw alignment
-            else:
-                vz = DESCENT_RATE
+        # -----------------------------
+        # Yaw-first control (PRIORITY)
+        # -----------------------------
+        yaw_rate = 0.0
+        yaw_aligned = False
+
+        if yaw_valid:
+            KP_YAW = 1.5
+
+            yaw_rate = math.degrees(KP_YAW * yaw_error)
+
+            # clamp
+            yaw_rate = max(min(yaw_rate, 30.0), -30.0)
+
+            if abs(yaw_error) < math.radians(20):
+                yaw_aligned = True
+        else:
+            yaw_rate = 0.0
+            yaw_aligned = False
+
+        if yaw_valid and not yaw_aligned:
+            vz = 0.0
+        elif angle_total <= ANGLE_DESCEND:
+            vz = DESCENT_RATE
         else:
             vz = 0.0
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
@@ -172,24 +192,7 @@ async def precision_land(drone):
             await drone.action.land()
             return
 
-        # -----------------------------
-        # Yaw control
-        # -----------------------------
-        yaw_rate = 0.0
-
-        if yaw_valid:
-            KP_YAW = 1.5
-
-            # only yaw when roughly centered (prevents chaos)
-            if abs(x_body) < 0.2 and abs(y_body) < 0.2:
-                yaw_rate = math.degrees(KP_YAW * yaw_error)
-
-                # clamp (deg/sec)
-                yaw_rate = max(min(yaw_rate, 30.0), -30.0)
-
-        # if no valid yaw → stop rotation
-        else:
-            yaw_rate = 0.0
+        
         # -----------------------------
         # Send BODY velocity
         # -----------------------------
