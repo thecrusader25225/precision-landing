@@ -25,6 +25,64 @@ ANGLE_DESCEND = 0.349066    #20 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
 
+async def yaw_align(drone):
+    print("Starting yaw alignment...")
+
+    ALIGN_THRESH = math.radians(5)
+    STABLE_TIME = 1.0  # seconds to hold alignment
+
+    aligned_since = None
+
+    while True:
+        latest = None
+
+        # get latest packet
+        while True:
+            try:
+                data, _ = sock.recvfrom(1024)
+                latest = data
+            except BlockingIOError:
+                break
+
+        if latest is None:
+            await asyncio.sleep(0.02)
+            continue
+
+        packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
+        print(f"id: ",packet_id,"Tag72: ", f72, x72, y72, z72,"TagX: ",fX, xX, yX, zX )
+        # need both tags
+        if not (f72 > 0.5 and fX > 0.5):
+            print("Waiting for both tags...")
+            await asyncio.sleep(0.05)
+            continue
+
+        dx = xX - x72
+        dy = yX - y72
+
+        yaw_error = math.atan2(dx, -dy)
+
+        KP_YAW = 1.5
+        yaw_rate = math.degrees(KP_YAW * yaw_error)
+        yaw_rate = max(min(yaw_rate, 30.0), -30.0)
+
+        print(f"Yaw error: {math.degrees(yaw_error):.2f}")
+
+        # send yaw-only command
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(0.0, 0.0, 0.0, yaw_rate)
+        )
+
+        # alignment check
+        if abs(yaw_error) < ALIGN_THRESH:
+            if aligned_since is None:
+                aligned_since = time.time()
+            elif time.time() - aligned_since > STABLE_TIME:
+                print("Yaw aligned and stable")
+                break
+        else:
+            aligned_since = None
+
+        await asyncio.sleep(0.05)
 # -----------------------------
 # PRECISION LANDING LOOP
 # -----------------------------
@@ -47,19 +105,17 @@ async def precision_land(drone):
                 await asyncio.sleep(0.02)
                 continue
 
-            packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
+            packet_id, f72, x72, y72, z72,fX, xX, yX, zX  = struct.unpack("Iffffffff", latest)
         
         
-        print(f"TAG: ",packet_id, f72, x72, y72, z72, fX, xX, yX, zX)
+        print(f"TAG72: ",packet_id, f72, x72, y72, z72)
         x_cam, y_cam, z_cam = 0.0, 0.0, 0.0
         # -----------------------------
         # Choose landing tag
         # -----------------------------
         if f72 > 0.5:
-            f72 = True
             x_cam, y_cam, z_cam = x72, y72, z72
-        else:
-            f72 = False
+        
 
         # convert cm → meters
         x_cam /= 100.0
@@ -75,20 +131,6 @@ async def precision_land(drone):
         x_body = -y_cam   # forward/back
         y_body = x_cam   # right/left
 
-                # -----------------------------
-        # YAW from 2-tag geometry
-        # -----------------------------
-        yaw_error = 0.0
-        yaw_valid = False
-
-        if f72 > 0.5 and fX > 0.5:
-            dx = xX - x72
-            dy = yX - y72
-
-            # camera forward = -y_cam → mapped to x_body
-            yaw_error = math.atan2(dx, -dy)
-            yaw_valid = True
-
         # Noise filter
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
             print("OUTLIER → ignored")
@@ -102,14 +144,11 @@ async def precision_land(drone):
             last_z = z_cam
 
         time_since_seen = current_time - last_seen_time
-
         if f72 < 0.5:
             x_body = last_x
             y_body = last_y
             z_cam = last_z   # optional but useful
             print("SHORT LOSS → continuing")
-
-
         # -----------------------------
         # Deadband
         # -----------------------------
@@ -152,29 +191,7 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
-        # -----------------------------
-        # Yaw-first control (PRIORITY)
-        # -----------------------------
-        yaw_rate = 0.0
-        yaw_aligned = False
-
-        if yaw_valid:
-            KP_YAW = 1.5
-
-            yaw_rate = math.degrees(KP_YAW * yaw_error)
-
-            # clamp
-            yaw_rate = max(min(yaw_rate, 30.0), -30.0)
-
-            if abs(yaw_error) < math.radians(20):
-                yaw_aligned = True
-        else:
-            yaw_rate = 0.0
-            yaw_aligned = False
-
-        if yaw_valid and not yaw_aligned:
-            vz = 0.0
-        elif angle_total <= ANGLE_DESCEND:
+        if angle_total <= ANGLE_DESCEND:
             vz = DESCENT_RATE
         else:
             vz = 0.0
@@ -197,7 +214,7 @@ async def precision_land(drone):
         # Send BODY velocity
         # -----------------------------
         await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(vx, vy, vz, yaw_rate)
+            VelocityBodyYawspeed(vx, vy, vz, 0)
         )
 
         await asyncio.sleep(0.1)
@@ -217,8 +234,7 @@ async def run():
     print("Connected")
 
     # Allow telemetry to stabilize (important for ArduPilot)
-    await asyncio.sleep(4)
-
+    await asyncio.sleep(1)
     
     # Send initial neutral setpoint (required before offboard.start())
     await drone.offboard.set_velocity_body(
@@ -232,7 +248,10 @@ async def run():
     print("Offboard mode started")
 
     await asyncio.sleep(1)
-
+    print("Running yaw_align")
+    #Run yaw alignment
+    await yaw_align(drone)
+    print("Run precision_land")
     # Run landing
     await precision_land(drone)
 
