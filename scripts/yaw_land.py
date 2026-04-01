@@ -128,7 +128,7 @@ async def precision_land(drone):
         # - Downward-facing camera
         # - Image top aligned with drone nose
         # -----------------------------
-        x_body = -y_cam   # forward/back
+        x_body = -y_cam - 0.075  # forward/back
         y_body = x_cam   # right/left
 
         # Noise filter
