@@ -87,6 +87,7 @@ async def yaw_align(drone):
 # PRECISION LANDING LOOP
 # -----------------------------
 async def precision_land(drone):
+    stable_since = None
     last_seen_time = time.time()
     last_x, last_y, last_z = 0.0, 0.0, 0.0
     print("Starting precision landing")
@@ -147,7 +148,7 @@ async def precision_land(drone):
         if f72 < 0.5:
             x_body = last_x
             y_body = last_y
-            z_cam = last_z   # optional but useful
+            # z_cam = last_z   # optional but useful
             print("SHORT LOSS → continuing")
         # -----------------------------
         # Deadband
@@ -175,13 +176,13 @@ async def precision_land(drone):
         # error magnitude
         error_mag = math.sqrt(x_body**2 + y_body**2)
 
-        # 🔥 scale for large errors
+        # scale for large errors
         if error_mag > 0.3:
             scale = min(2.0, error_mag / 0.3)
             vx *= scale
             vy *= scale
 
-        # 🔥 adaptive clamp
+        # adaptive clamp
         base_vel = 0.05 + 0.5 * z_cam
         boost = min(0.3, error_mag)
 
@@ -191,9 +192,20 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
-        if angle_total <= ANGLE_DESCEND:
-            vz = DESCENT_RATE
+        XY_THRESH = 0.05      # 5 cm
+        STABLE_TIME = 0.4     # seconds
+
+        if abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH:
+            vx = 0.0
+            vy = 0.0
+            if stable_since is None:
+                stable_since = time.time()
+            elif time.time() - stable_since > STABLE_TIME:
+                vz = DESCENT_RATE
+            else:
+                vz = 0.0
         else:
+            stable_since = None
             vz = 0.0
         print(f"vx: {vx:.2f}  vy: {vy:.2f}  vz: {vz:.2f}")
 
@@ -204,7 +216,7 @@ async def precision_land(drone):
             altitude = pos.relative_altitude_m
             break
 
-        if z_cam < 0.3 and z_cam >0.1:
+        if z_cam < 0.2 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
