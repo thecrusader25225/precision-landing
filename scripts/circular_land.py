@@ -87,6 +87,9 @@ async def yaw_align(drone):
 # PRECISION LANDING LOOP
 # -----------------------------
 async def precision_land(drone):
+    search_done = False
+    detection_count = 0
+    REQUIRED_DETECTIONS = 5   # frames (~0.5s)
     stable_since = None
     last_seen_time = time.time()
     last_x, last_y, last_z = 0.0, 0.0, 0.0
@@ -132,6 +135,41 @@ async def precision_land(drone):
         x_body = -y_cam - 0.075  # forward/back
         y_body = x_cam   # right/left
 
+        if not search_done:
+            print("Running circular search")
+
+            search_radius = 0.5
+            angular_speed = 0.6
+            t = time.time()
+
+            vx = search_radius * angular_speed * math.cos(angular_speed * t)
+            vy = search_radius * angular_speed * math.sin(angular_speed * t)
+
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(vx, vy, 0.0, 10.0)
+            )
+
+            # check detection stability
+            if f72 > 0.5:
+                detection_count += 1
+                print(f"Detection count: {detection_count}")
+
+                if detection_count >= REQUIRED_DETECTIONS:
+                    print("Tag locked → exiting search")
+                    search_done = True
+                    for _ in range(5):
+                        await drone.offboard.set_velocity_body(
+                            VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+                        )
+                        await asyncio.sleep(0.05)
+
+                await asyncio.sleep(0.1)  # let it settle
+            else:
+                detection_count = 0
+
+            await asyncio.sleep(0.1)
+            continue
+
         # Noise filter
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
             print("OUTLIER → ignored")
@@ -168,7 +206,8 @@ async def precision_land(drone):
         # Proportional velocity control
         # -----------------------------
         # dynamic gain
-        kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
+        # kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
+        kp_dynamic = KP_MOVE * max(0.6, 1.2 - z_cam)
 
         vx = kp_dynamic * x_body
         vy = kp_dynamic * y_body
@@ -192,7 +231,7 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
-        XY_THRESH = 0.05      # 5 cm
+        XY_THRESH = 0.10      # 1 cm
         STABLE_TIME = 0.4     # seconds
 
         if abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH:
