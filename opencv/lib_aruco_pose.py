@@ -40,7 +40,12 @@ class ArucoSingleTracker:
         self._detector = aruco.ArucoDetector(self._dictionary, self._parameters)
 
     def track(self, frame, verbose=False):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        #gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        if len(frame.shape) == 2:
+            # already grayscale
+            gray = frame
+        else:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         corners, ids, _ = self._detector.detectMarkers(gray)
 

@@ -23,7 +23,33 @@ packet_id = 0
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
 
+# scaling
+calib_width = 3264
+calib_height = 2448
 
+scale_x = 1920 / calib_width
+scale_y = 1080 / calib_height
+
+camera_matrix[0, 0] *= scale_x
+camera_matrix[1, 1] *= scale_y
+camera_matrix[0, 2] *= scale_x
+camera_matrix[1, 2] *= scale_y
+
+# now scale AGAIN for detection resolution
+scale_x_det = 960 / 1920
+scale_y_det = 540 / 1080
+
+camera_matrix_small = camera_matrix.copy()
+camera_matrix_small[0, 0] *= scale_x_det
+camera_matrix_small[1, 1] *= scale_y_det
+camera_matrix_small[0, 2] *= scale_x_det
+camera_matrix_small[1, 2] *= scale_y_det
+
+def rescale(tag):
+    if tag is None:
+        return None
+    x, y, z = tag
+    return (x * scale_x_det, y * scale_y_det, z)
 
 aruco = ArucoSingleTracker(
     id_to_find=72,
@@ -31,7 +57,12 @@ aruco = ArucoSingleTracker(
     camera_matrix=camera_matrix,
     camera_distortion=camera_distortion
 )
-
+aruco_small = ArucoSingleTracker(
+    id_to_find=72,
+    marker_size=15.0,
+    camera_matrix=camera_matrix_small,
+    camera_distortion=camera_distortion
+)
 # -----------------------------
 # GSTREAMER PIPELINE
 # -----------------------------
@@ -39,9 +70,15 @@ Gst.init(None)
 
 pipeline = Gst.parse_launch(
     "libcamerasrc ! "
-    "video/x-raw,format=NV12,width=3280,height=2464,framerate=15/1 ! "
-    "queue ! videoconvert ! video/x-raw,format=BGR ! "
-    "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true"
+    "video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! "
+    "tee name=t "
+    "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
+    "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true "
+    #"t. ! queue ! autovideosink"
+#        "t. ! queue ! "
+ #   "x264enc tune=zerolatency speed-preset=ultrafast bitrate=8000 ! "
+  #  "h264parse ! matroskamux ! "
+   # "filesink location=dist-test.mkv sync=false"
 )
 
 appsink = pipeline.get_by_name("appsink")
@@ -62,25 +99,29 @@ while True:
     caps = sample.get_caps()
     structure = caps.get_structure(0)
 
-    w = 3280
-    h = 2464
+    w = 1920
+    h = 1080
 
     success, mapinfo = buf.map(Gst.MapFlags.READ)
     if not success:
         continue
 
     frame = np.frombuffer(mapinfo.data, dtype=np.uint8)
-    frame = frame.reshape((h, w, 3))
+    frame = frame.reshape((h, w))
     buf.unmap(mapinfo)
 
     # -----------------------------
     # ARUCO TRACKING (UNCHANGED)
     # -----------------------------
-    detections = aruco.track(frame)
+    small = cv2.resize(frame, (960, 540))
+    detections = aruco_small.track(small)
+    #detections = aruco.track(frame)
 
     tag72 = detections.get(72, None)
     tagX  = detections.get(10, None)  # your orientation tag
 
+    #tag72 = rescale(detections.get(72, None))
+    #tagX  = rescale(detections.get(10, None))
     def valid(tag):
         if tag is None:
             return None
