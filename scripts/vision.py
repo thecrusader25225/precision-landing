@@ -19,29 +19,11 @@ packet_id = 0
 # -----------------------------
 # CAMERA MODEL (unchanged)
 # -----------------------------
-width = 640
-height = 480
-fov = 1.204
-
-fx = width / (2 * math.tan(fov/2))
-fy = fx
-cx = width / 2
-cy = height / 2
 
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
 
-# --- scale calibration to 8mp resolution ---
-calib_width = 3264
-calib_height = 2448
 
-scale_x = width / calib_width
-scale_y = height / calib_height
-
-camera_matrix[0,0] *= scale_x
-camera_matrix[1,1] *= scale_y
-camera_matrix[0,2] *= scale_x
-camera_matrix[1,2] *= scale_y
 
 aruco = ArucoSingleTracker(
     id_to_find=72,
@@ -55,26 +37,10 @@ aruco = ArucoSingleTracker(
 # -----------------------------
 Gst.init(None)
 
-#pipeline = Gst.parse_launch(
-#    "libcamerasrc ! "
-#    "video/x-raw,width=640,height=480,framerate=30/1 ! "
-#    "videoconvert ! video/x-raw,format=BGR ! "
-#    "appsink name=sink emit-signals=false max-buffers=1 drop=true"
-#)
-
 pipeline = Gst.parse_launch(
     "libcamerasrc ! "
-    "video/x-raw,format=NV12,width=640,height=480,framerate=30/1 ! "
-    "tee name=t "
-
-    # -------- RTMP branch --------
-    #"t. ! queue ! videoconvert ! video/x-raw,format=I420 ! "
-    #"x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
-    #"h264parse ! flvmux streamable=true ! "
-    #"rtmpsink location=\"rtmp://100.78.97.114:1935/stream\" "
-
-    # -------- Vision branch --------
-    "t. ! queue ! videoconvert ! video/x-raw,format=BGR ! "
+    "video/x-raw,format=NV12,width=3280,height=2464,framerate=15/1 ! "
+    "queue ! videoconvert ! video/x-raw,format=BGR ! "
     "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true"
 )
 
@@ -96,8 +62,8 @@ while True:
     caps = sample.get_caps()
     structure = caps.get_structure(0)
 
-    w = 640
-    h = 480
+    w = 3280
+    h = 2464
 
     success, mapinfo = buf.map(Gst.MapFlags.READ)
     if not success:
