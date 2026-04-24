@@ -122,7 +122,10 @@ async def precision_land(drone):
         x_cam /= 100.0
         y_cam /= 100.0
         z_cam /= 100.0
-
+        if z_cam < 0.2 and z_cam >0.1:
+            print("Switching to LAND mode")
+            await drone.action.land()
+            return
         # -----------------------------
         # OpenCV camera → UAV BODY frame
         # Assumes:
@@ -218,10 +221,7 @@ async def precision_land(drone):
             altitude = pos.relative_altitude_m
             break
 
-        if z_cam < 0.2 and z_cam >0.1:
-            print("Switching to LAND mode")
-            await drone.action.land()
-            return
+        
 
         
         # -----------------------------
