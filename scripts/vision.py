@@ -74,6 +74,13 @@ pipeline = Gst.parse_launch(
     "tee name=t "
     "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
     "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true "
+    "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
+    "x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
+    "h264parse ! flvmux streamable=true ! "
+    "rtmpsink location=\"rtmp://100.78.97.114:1935/stream\" "
+
+
+
     #"t. ! queue ! autovideosink"
 #        "t. ! queue ! "
  #   "x264enc tune=zerolatency speed-preset=ultrafast bitrate=8000 ! "
@@ -85,7 +92,7 @@ appsink = pipeline.get_by_name("appsink")
 pipeline.set_state(Gst.State.PLAYING)
 
 print("Camera pipeline started")
-
+saved = False
 # -----------------------------
 # FRAME LOOP
 # -----------------------------
@@ -168,7 +175,9 @@ while True:
         # camera forward = -y_cam → mapped to x_body
         yaw_error = math.atan2(dx, -dy)*180/math.pi
         yaw_valid = True
-        
-
+    if not saved:
+        cv2.imwrite("/home/marg/debug_frame.png", frame)
+        print("Saved debug frame")
+        saved = True
     sock.sendto(data, (UDP_IP, UDP_PORT))
     print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}")
