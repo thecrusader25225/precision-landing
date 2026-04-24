@@ -99,9 +99,12 @@ async def precision_land(drone):
                 await asyncio.sleep(0.02)
                 continue
 
-            packet_id, found, x_cam, y_cam, z_cam = struct.unpack("Iffff", latest)
-        
-        
+            #packet_id, found, x_cam, y_cam, z_cam = struct.unpack("Iffff", latest)
+            packet_id, f72, x72, y72, z72,fX, xX, yX, zX  = struct.unpack("Iffffffff", latest)
+            found = f72
+            y_cam = y72
+            x_cam = x72
+            z_cam = z72
         print(f"TAG: ",packet_id, found, x_cam, y_cam, z_cam)
         # convert cm → meters
         x_cam /= 100.0
@@ -240,7 +243,7 @@ async def run():
         break
 
     # Wait until drone returns home
-    await wait_until_home(drone, home_lat, home_lon)
+    #await wait_until_home(drone, home_lat, home_lon)
 
     # Send initial neutral setpoint
     await drone.offboard.set_velocity_body(

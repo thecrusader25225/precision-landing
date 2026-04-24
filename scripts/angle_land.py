@@ -192,17 +192,18 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
-        XY_THRESH = 0.1      # 10 cm
+        XY_THRESH = 0.05      # 5 cm
         STABLE_TIME = 0.4     # seconds
+        allow_angle = angle_total < ANGLE_DESCEND
         allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
         if f72 < 0.5:
             vz = 0
-        elif allow_xy:
+        elif allow_angle:
             if stable_since is None:
                 stable_since = time.time()
             elif time.time() - stable_since > STABLE_TIME:
                 vz = DESCENT_RATE
-                print("Stable xy→ descending")
+                print("Stable angle → descending")
             else:
                 vz = 0.0
         else:
