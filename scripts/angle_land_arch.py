@@ -118,20 +118,20 @@ async def circular_search(drone):
         # circular motion
         t = time.time() - start_time
 
-        # LOG SPIRAL (exponential growth)
+        # ARCHIMEDEAN (linear growth)
         BASE_VX = 0.1
-        GROWTH_FACTOR = 0.12   # critical parameter
-        MAX_VX = 0.4
+        GROWTH_RATE = 0.015
+        MAX_VX = 0.3
 
-        vx = BASE_VX * math.exp(GROWTH_FACTOR * t)
+        vx = BASE_VX + GROWTH_RATE * t
         vx = min(vx, MAX_VX)
 
         vy = 0.0
         vz = 0.0
-
-        # yaw must scale stronger here
-        yaw_rate = 10.0 + 40.0 * vx
-        yaw_rate = min(yaw_rate, 25.0)
+    
+        # yaw tuned for smooth curve
+        yaw_rate = 8.0 + 25.0 * vx
+        yaw_rate = min(yaw_rate, 20.0)
 
         await drone.offboard.set_velocity_body(
             VelocityBodyYawspeed(vx, vy, 0.0, yaw_rate)
