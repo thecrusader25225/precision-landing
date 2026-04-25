@@ -22,13 +22,14 @@ packet_id = 0
 
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
-
+res_x = 960
+res_y = 540
 # scaling
 calib_width = 3264
 calib_height = 2448
 
-scale_x = 1920 / calib_width
-scale_y = 1080 / calib_height
+scale_x = res_x / calib_width
+scale_y = res_y / calib_height
 
 camera_matrix[0, 0] *= scale_x
 camera_matrix[1, 1] *= scale_y
@@ -36,8 +37,8 @@ camera_matrix[0, 2] *= scale_x
 camera_matrix[1, 2] *= scale_y
 
 # now scale AGAIN for detection resolution
-scale_x_det = 960 / 1920
-scale_y_det = 540 / 1080
+scale_x_det = 960 / res_x
+scale_y_det = 540 / res_y
 
 camera_matrix_small = camera_matrix.copy()
 camera_matrix_small[0, 0] *= scale_x_det
@@ -69,15 +70,29 @@ aruco_small = ArucoSingleTracker(
 Gst.init(None)
 
 pipeline = Gst.parse_launch(
-    "libcamerasrc ! "
-    "video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! "
-    "tee name=t "
-    "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
-    "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true "
-    "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
-    "x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
-    "h264parse ! flvmux streamable=true ! "
-    "rtmpsink location=\"rtmp://100.78.97.114:1935/stream\" "
+"libcamerasrc ! "
+"video/x-raw,format=NV12,width=3280,height=2464,framerate=15/1 ! "
+
+#--------downscale------------
+"videoconvert ! videoscale ! "
+"video/x-raw,width=960,height=540 ! "
+
+"tee name=t "
+#--------vision-------------
+"t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
+"appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true "
+#--------record---------------
+# "t. ! queue ! videoconvert ! videoscale ! "
+# "video/x-raw,width=960,height=540 ! "
+# "x264enc tune=zerolatency bitrate=8000 speed-preset=ultrafast ! "
+# "matroskamux ! filesink location=new.mkv"
+
+
+
+    #"t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
+    #"x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
+    #"h264parse ! flvmux streamable=true ! "
+    #"rtmpsink location=\"rtmp://100.78.97.114:1935/stream\" "
 
 
 
@@ -106,8 +121,8 @@ while True:
     caps = sample.get_caps()
     structure = caps.get_structure(0)
 
-    w = 1920
-    h = 1080
+    w = res_x
+    h = res_y
 
     success, mapinfo = buf.map(Gst.MapFlags.READ)
     if not success:
@@ -120,8 +135,8 @@ while True:
     # -----------------------------
     # ARUCO TRACKING (UNCHANGED)
     # -----------------------------
-    small = cv2.resize(frame, (960, 540))
-    detections = aruco_small.track(small)
+    # small = cv2.resize(frame, (960, 540))
+    detections = aruco_small.track(frame)
     #detections = aruco.track(frame)
 
     tag72 = detections.get(72, None)
@@ -175,9 +190,9 @@ while True:
         # camera forward = -y_cam → mapped to x_body
         yaw_error = math.atan2(dx, -dy)*180/math.pi
         yaw_valid = True
-    if not saved:
-        cv2.imwrite("/home/marg/debug_frame.png", frame)
-        print("Saved debug frame")
-        saved = True
+    #if not saved:
+     #   cv2.imwrite("/home/marg/debug_frame.png", frame)
+      #  print("Saved debug frame")
+       # saved = True
     sock.sendto(data, (UDP_IP, UDP_PORT))
     print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}")

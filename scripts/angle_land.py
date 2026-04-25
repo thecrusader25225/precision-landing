@@ -21,7 +21,7 @@ sock.setblocking(False)
 KP_MOVE = 0.15              # proportional gain
 MAX_SPEED = 0.25             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
-ANGLE_DESCEND = 0.349066    #20 deg
+ANGLE_DESCEND = 0.174533    #10 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
 
@@ -122,7 +122,7 @@ async def precision_land(drone):
         x_cam /= 100.0
         y_cam /= 100.0
         z_cam /= 100.0
-        if z_cam < 0.2 and z_cam >0.1:
+        if z_cam < 0.25 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
