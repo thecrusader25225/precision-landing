@@ -21,7 +21,7 @@ sock.setblocking(False)
 KP_MOVE = 0.15              # proportional gain
 MAX_SPEED = 0.25             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
-ANGLE_DESCEND = 0.174533    #10 deg
+ANGLE_DESCEND = 0.261799    #15 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
 
@@ -86,14 +86,20 @@ async def yaw_align(drone):
 
 # CIRCULAR SEARCH
 async def circular_search(drone):
-    print("Starting circular search")
+    print("Starting spiral search")
 
     start_time = time.time()
+    seen_count = 0
+
+    BASE_VX = 0.1
+    GROWTH_RATE = 0.02
+    MAX_VX = 0.4
+    YAW_RATE = 20.0
 
     while True:
         latest = None
 
-        # get latest packet (same UDP logic)
+        # get latest packet
         while True:
             try:
                 data, _ = sock.recvfrom(1024)
@@ -105,13 +111,19 @@ async def circular_search(drone):
             packet_id, f72, x72, y72, z72, *_ = struct.unpack("Iffffffff", latest)
 
             if f72 >= 0.5:
+                seen_count += 1
+            else:
+                seen_count = 0
+
+            if seen_count >= 1:
                 print("TAG FOUND → stopping search")
-                
-                # HARD STOP before switching
-                await drone.offboard.set_velocity_body(
-                    VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-                )
-                await asyncio.sleep(0.2)
+
+                # HARD STOP
+                for _ in range(5):
+                    await drone.offboard.set_velocity_body(
+                        VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+                    )
+                    await asyncio.sleep(0.1)
 
                 return   # 🔑 exit search
 
@@ -134,8 +146,10 @@ async def circular_search(drone):
         yaw_rate = min(yaw_rate, 25.0)
 
         await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(vx, vy, 0.0, yaw_rate)
+            VelocityBodyYawspeed(vx, vy, vz, yaw_rate)
         )
+
+        print(f"[SEARCH] vx:{vx:.2f} yaw:{yaw_rate}")
 
         await asyncio.sleep(0.1)
 
@@ -179,7 +193,7 @@ async def precision_land(drone):
         x_cam /= 100.0
         y_cam /= 100.0
         z_cam /= 100.0
-        if z_cam < 0.25 and z_cam >0.1:
+        if z_cam < 0.4 and z_cam >0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
