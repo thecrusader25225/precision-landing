@@ -6,7 +6,7 @@ import math
 import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst
-
+import sys
 from opencv.lib_aruco_pose import ArucoSingleTracker
 
 # -----------------------------
@@ -16,6 +16,13 @@ UDP_IP = "127.0.0.1"
 UDP_PORT = 9999
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 packet_id = 0 
+record_suffix = None
+output_file = None
+if len(sys.argv) > 1:
+    record_suffix = sys.argv[1]
+
+if record_suffix:
+    output_file = f"vid{record_suffix}.mkv"
 # -----------------------------
 # CAMERA MODEL (unchanged)
 # -----------------------------
@@ -69,7 +76,7 @@ aruco_small = ArucoSingleTracker(
 # -----------------------------
 Gst.init(None)
 
-pipeline = Gst.parse_launch(
+pipeline_str = (
 "libcamerasrc ! "
 "video/x-raw,format=NV12,width=3280,height=2464,framerate=15/1 ! "
 
@@ -81,28 +88,22 @@ pipeline = Gst.parse_launch(
 #--------vision-------------
 "t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
 "appsink name=appsink emit-signals=false sync=false max-buffers=1 drop=true "
-#--------record---------------
-# "t. ! queue ! videoconvert ! videoscale ! "
-# "video/x-raw,width=960,height=540 ! "
-# "x264enc tune=zerolatency bitrate=8000 speed-preset=ultrafast ! "
-# "matroskamux ! filesink location=new.mkv"
-
-
-
+#--------remote stream---------------
     #"t. ! queue ! videoconvert ! video/x-raw,format=GRAY8 ! "
     #"x264enc tune=zerolatency bitrate=1000 speed-preset=ultrafast ! "
     #"h264parse ! flvmux streamable=true ! "
     #"rtmpsink location=\"rtmp://100.78.97.114:1935/stream\" "
-
-
-
-    #"t. ! queue ! autovideosink"
-#        "t. ! queue ! "
- #   "x264enc tune=zerolatency speed-preset=ultrafast bitrate=8000 ! "
-  #  "h264parse ! matroskamux ! "
-   # "filesink location=dist-test.mkv sync=false"
 )
 
+if output_file:
+    pipeline_str += (
+        "t. ! queue ! videoconvert ! videoscale ! "
+        "video/x-raw,width=960,height=540 ! "
+        "x264enc tune=zerolatency bitrate=8000 speed-preset=ultrafast ! "
+        f"matroskamux ! filesink location={output_file}"
+    )
+
+pipeline = Gst.parse_launch(pipeline_str)
 appsink = pipeline.get_by_name("appsink")
 pipeline.set_state(Gst.State.PLAYING)
 
