@@ -25,6 +25,9 @@ ANGLE_DESCEND = 0.174533    #10 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
 
+# SHORT_LOSS_TIME = 0.3
+LONG_LOSS_TIME  = 2.0
+
 async def yaw_align(drone):
     print("Starting yaw alignment...")
 
@@ -183,18 +186,35 @@ async def precision_land(drone):
             continue
         current_time = time.time()
 
+        time_since_seen = current_time - last_seen_time
+        # NORMAL CONDITIONS
         if f72 >= 0.5:
             last_seen_time = current_time
             last_x = x_body
             last_y = y_body
             last_z = z_cam
 
-        time_since_seen = current_time - last_seen_time
-        if f72 < 0.5:
+        # LONG LOSS
+        elif time_since_seen > LONG_LOSS_TIME:
+            print("LONG LOSS → starting circular search")
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+            )
+            await asyncio.sleep(0.2)
+
+            await circular_search(drone)
+
+            # reset tracking after reacquire
+            last_seen_time = time.time()
+            continue
+        
+        # SHORT LOSS
+        else:
             x_body = last_x
             y_body = last_y
             # z_cam = last_z   # optional but useful
             print("SHORT LOSS → continuing")
+        
         # -----------------------------
         # Deadband
         # -----------------------------
