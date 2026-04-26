@@ -91,7 +91,7 @@ async def circular_search(drone):
     start_time = time.time()
     seen_count = 0
 
-    BASE_VX = 0.1
+    BASE_VX = 0.3
     GROWTH_RATE = 0.02
     MAX_VX = 0.4
     YAW_RATE = 20.0
@@ -139,7 +139,7 @@ async def circular_search(drone):
         vx = min(vx, MAX_VX)
 
         vy = 0.0
-        vz = 0.0
+        vz = 0.00001
 
         # yaw must scale stronger here
         yaw_rate = 10.0 + 40.0 * vx
@@ -341,11 +341,15 @@ async def run():
 
 
     # Send initial neutral setpoint (required before offboard.start())
-    await drone.offboard.set_velocity_body(
-        VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-    )
+    #await drone.offboard.set_velocity_body(
+    #    VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+    #)
+    for _ in range(10):   # ~1 second
+        await drone.offboard.set_velocity_body(
+           VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+        )
 
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(0.1)
 
     # Start offboard mode
     await drone.offboard.start()
