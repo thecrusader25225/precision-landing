@@ -25,11 +25,71 @@ ANGLE_DESCEND = 0.261799    #15 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
 
+# async def yaw_align(drone):
+#     print("Starting yaw alignment...")
+
+#     ALIGN_THRESH = math.radians(5)
+#     STABLE_TIME = 1.0  # seconds to hold alignment
+
+#     aligned_since = None
+
+#     while True:
+#         latest = None
+
+#         # get latest packet
+#         while True:
+#             try:
+#                 data, _ = sock.recvfrom(1024)
+#                 latest = data
+#             except BlockingIOError:
+#                 break
+
+#         if latest is None:
+#             await asyncio.sleep(0.02)
+#             continue
+
+#         packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
+#         print(f"id: ",packet_id,"Tag72: ", f72, x72, y72, z72,"TagX: ",fX, xX, yX, zX )
+#         # need both tags
+#         if not (f72 > 0.5 and fX > 0.5):
+#             print("Waiting for both tags...")
+#             await asyncio.sleep(0.05)
+#             continue
+
+#         dx = xX - x72
+#         dy = yX - y72
+
+#         yaw_error = math.atan2(dx, -dy)
+
+#         KP_YAW = 1.5
+#         yaw_rate = math.degrees(KP_YAW * yaw_error)
+#         yaw_rate = max(min(yaw_rate, 30.0), -30.0)
+
+#         print(f"Yaw error: {math.degrees(yaw_error):.2f}")
+
+#         # send yaw-only command
+#         await drone.offboard.set_velocity_body(
+#             VelocityBodyYawspeed(0.0, 0.0, 0.0, yaw_rate)
+#         )
+
+#         # alignment check
+#         if abs(yaw_error) < ALIGN_THRESH:
+#             if aligned_since is None:
+#                 aligned_since = time.time()
+#             elif time.time() - aligned_since > STABLE_TIME:
+#                 print("Yaw aligned and stable")
+#                 break
+#         else:
+#             aligned_since = None
+
+#         await asyncio.sleep(0.05)
+
 async def yaw_align(drone):
     print("Starting yaw alignment...")
 
-    ALIGN_THRESH = math.radians(5)
-    STABLE_TIME = 1.0  # seconds to hold alignment
+    ALIGN_THRESH = math.radians(6)   # tolerance (breathing room)
+    STABLE_TIME = 0.5                # how long to stay inside
+    KP_YAW = 1.5
 
     aligned_since = None
 
@@ -49,41 +109,48 @@ async def yaw_align(drone):
             continue
 
         packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
-        print(f"id: ",packet_id,"Tag72: ", f72, x72, y72, z72,"TagX: ",fX, xX, yX, zX )
+
         # need both tags
         if not (f72 > 0.5 and fX > 0.5):
-            print("Waiting for both tags...")
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+            )
+            aligned_since = None
             await asyncio.sleep(0.05)
             continue
 
+        # compute yaw error
         dx = xX - x72
         dy = yX - y72
-
         yaw_error = math.atan2(dx, -dy)
 
-        KP_YAW = 1.5
+        # simple proportional yaw
         yaw_rate = math.degrees(KP_YAW * yaw_error)
-        yaw_rate = max(min(yaw_rate, 30.0), -30.0)
+        yaw_rate = max(min(yaw_rate, 25.0), -25.0)
 
-        print(f"Yaw error: {math.degrees(yaw_error):.2f}")
-
-        # send yaw-only command
-        await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(0.0, 0.0, 0.0, yaw_rate)
-        )
-
-        # alignment check
+        # -----------------------------
+        # tolerance logic (this is key)
+        # -----------------------------
         if abs(yaw_error) < ALIGN_THRESH:
+            # inside tolerance → stop rotating
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+            )
+
             if aligned_since is None:
                 aligned_since = time.time()
             elif time.time() - aligned_since > STABLE_TIME:
-                print("Yaw aligned and stable")
-                break
+                print("Yaw aligned → proceeding to landing")
+                return
         else:
+            # outside tolerance → keep rotating
             aligned_since = None
 
-        await asyncio.sleep(0.05)
+            await drone.offboard.set_velocity_body(
+                VelocityBodyYawspeed(0.0, 0.0, 0.0, yaw_rate)
+            )
 
+        await asyncio.sleep(0.05)
 # CIRCULAR SEARCH
 async def circular_search(drone):
     print("Starting spiral search")
@@ -369,7 +436,7 @@ async def run():
     await asyncio.sleep(1)
     print("Running yaw_align")
     #Run yaw alignment
-    # await yaw_align(drone)
+    await yaw_align(drone)
     print("Run precision_land")
     # Run landing
     await precision_land(drone)
