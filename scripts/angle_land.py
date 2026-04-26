@@ -351,6 +351,14 @@ async def run():
     await drone.offboard.start()
     print("Offboard mode started")
         # If not found → search
+    print("Stabilizing...")
+
+    for _ in range(20):   # ~2 seconds
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(0.0, 0.0, -0.1, 0.0)
+        )
+        await asyncio.sleep(0.1)
+        
     if not tag_seen:
         await circular_search(drone)
 
