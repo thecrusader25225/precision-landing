@@ -133,13 +133,13 @@ async def circular_search(drone):
         # LOG SPIRAL (exponential growth)
         BASE_VX = 0.1
         GROWTH_FACTOR = 0.12   # critical parameter
-        MAX_VX = 0.4
+        MAX_VX = 0.7
 
         vx = BASE_VX * math.exp(GROWTH_FACTOR * t)
         vx = min(vx, MAX_VX)
 
         vy = 0.0
-        vz = 0.00001
+        vz = 0.03
 
         # yaw must scale stronger here
         yaw_rate = 10.0 + 40.0 * vx

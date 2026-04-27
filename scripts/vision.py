@@ -8,6 +8,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import Gst
 import sys
 from opencv.lib_aruco_pose import ArucoSingleTracker
+import time
 
 # -----------------------------
 # UDP OUTPUT
@@ -112,8 +113,10 @@ saved = False
 # -----------------------------
 # FRAME LOOP
 # -----------------------------
+TARGET_FPS = 8
+FRAME_TIME = 1 / TARGET_FPS
 while True:
-
+    loop_start = time.time()
     sample = appsink.emit("pull-sample")
     if sample is None:
         continue
@@ -197,3 +200,6 @@ while True:
        # saved = True
     sock.sendto(data, (UDP_IP, UDP_PORT))
     print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}")
+    elapsed = time.time() - loop_start
+    if elapsed < FRAME_TIME:
+        time.sleep(FRAME_TIME - elapsed)
