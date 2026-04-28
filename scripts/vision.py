@@ -30,8 +30,8 @@ if record_suffix:
 
 camera_matrix = np.loadtxt("/home/marg/precision-landing/opencv/cameraMatrix.txt", delimiter=',')
 camera_distortion = np.loadtxt("/home/marg/precision-landing/opencv/cameraDistortion.txt", delimiter=',')
-res_x = 960
-res_y = 540
+res_x = 640
+res_y = 360
 # scaling
 calib_width = 3264
 calib_height = 2448
@@ -45,8 +45,8 @@ camera_matrix[0, 2] *= scale_x
 camera_matrix[1, 2] *= scale_y
 
 # now scale AGAIN for detection resolution
-scale_x_det = 960 / res_x
-scale_y_det = 540 / res_y
+scale_x_det =  640/ res_x
+scale_y_det = 360/ res_y
 
 camera_matrix_small = camera_matrix.copy()
 camera_matrix_small[0, 0] *= scale_x_det
@@ -83,7 +83,7 @@ pipeline_str = (
 
 #--------downscale------------
 "videoconvert ! videoscale ! "
-"video/x-raw,width=960,height=540 ! "
+"video/x-raw,width=640,height=360 ! "
 
 "tee name=t "
 #--------vision-------------
@@ -115,12 +115,15 @@ saved = False
 # -----------------------------
 TARGET_FPS = 8
 FRAME_TIME = 1 / TARGET_FPS
+last_process_time = 0
 while True:
     loop_start = time.time()
     sample = appsink.emit("pull-sample")
     if sample is None:
         continue
-
+    now = time.time()
+    if now - last_process_time < FRAME_TIME:
+        continue   # <-- HARD DROP 
     buf = sample.get_buffer()
     caps = sample.get_caps()
     structure = caps.get_structure(0)

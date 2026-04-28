@@ -91,8 +91,8 @@ async def circular_search(drone):
     start_time = time.time()
     seen_count = 0
 
-    BASE_VX = 0.3
-    GROWTH_RATE = 0.02
+    BASE_VX = 0.15
+    GROWTH_RATE = 0.1
     MAX_VX = 0.4
     YAW_RATE = 20.0
 
@@ -131,9 +131,9 @@ async def circular_search(drone):
         t = time.time() - start_time
 
         # LOG SPIRAL (exponential growth)
-        BASE_VX = 0.1
-        GROWTH_FACTOR = 0.12   # critical parameter
-        MAX_VX = 0.7
+        BASE_VX = 0.15
+        GROWTH_FACTOR = 0.1   # critical parameter
+        MAX_VX = 0.4
 
         vx = BASE_VX * math.exp(GROWTH_FACTOR * t)
         vx = min(vx, MAX_VX)
@@ -173,11 +173,11 @@ async def precision_land(drone):
             except BlockingIOError:
                 break
 
-            if latest is None:
-                await asyncio.sleep(0.02)
-                continue
+        if latest is None:
+            await asyncio.sleep(0.02)
+            continue
 
-            packet_id, f72, x72, y72, z72,fX, xX, yX, zX  = struct.unpack("Iffffffff", latest)
+        packet_id, f72, x72, y72, z72,fX, xX, yX, zX  = struct.unpack("Iffffffff", latest)
         
         
         print(f"TAG72: ",packet_id, f72, x72, y72, z72)
@@ -359,17 +359,17 @@ async def run():
 
     for _ in range(20):   # ~2 seconds
         await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(0.0, 0.0, -0.1, 0.0)
+            VelocityBodyYawspeed(0.0, 0.0, -0.001, 0.0)
         )
         await asyncio.sleep(0.1)
         
-    if not tag_seen:
-        await circular_search(drone)
+    #if not tag_seen:
+        #await circular_search(drone)
 
     await asyncio.sleep(1)
     print("Running yaw_align")
     #Run yaw alignment
-    # await yaw_align(drone)
+    await yaw_align(drone)
     print("Run precision_land")
     # Run landing
     await precision_land(drone)
