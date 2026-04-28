@@ -266,9 +266,42 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
+        #RATE LIMITER
+
+        MAX_DELTA = 0.02   # m/s per step (tune 0.015–0.03)
+
+        if not hasattr(precision_land, "prev_vx"):
+            precision_land.prev_vx = 0.0
+            precision_land.prev_vy = 0.0
+
+        vx = max(min(vx, precision_land.prev_vx + MAX_DELTA),
+                precision_land.prev_vx - MAX_DELTA)
+
+        vy = max(min(vy, precision_land.prev_vy + MAX_DELTA),
+                precision_land.prev_vy - MAX_DELTA)
+
+        precision_land.prev_vx = vx
+        precision_land.prev_vy = vy
+
         XY_THRESH = 0.05      # 5 cm
         STABLE_TIME = 0.4     # seconds
-        allow_angle = angle_total < ANGLE_DESCEND
+        # allow_angle = angle_total < ANGLE_DESCEND
+
+        # --- angle gating vs height ---
+        ANGLE_LOW  = math.radians(5.0)   # at ≤ 1m
+        ANGLE_HIGH = math.radians(15.0)  # at ≥ 2m
+
+        if z_cam <= 1.0:
+            angle_thresh = ANGLE_LOW
+        elif z_cam >= 2.0:
+            angle_thresh = ANGLE_HIGH
+        else:
+            # linear interpolation between 1m and 2m
+            t = (z_cam - 1.0) / (2.0 - 1.0)   # 0 → 1
+            angle_thresh = ANGLE_LOW + t * (ANGLE_HIGH - ANGLE_LOW)
+
+        allow_angle = angle_total < angle_thresh
+
         allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
         if f72 < 0.5:
             vz = 0

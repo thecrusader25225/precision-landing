@@ -266,6 +266,23 @@ async def precision_land(drone):
         vx = max(min(vx, max_vel), -max_vel)
         vy = max(min(vy, max_vel), -max_vel)
 
+        #RATE LIMITER
+
+        MAX_DELTA = 0.02   # m/s per step (tune 0.015–0.03)
+
+        if not hasattr(precision_land, "prev_vx"):
+            precision_land.prev_vx = 0.0
+            precision_land.prev_vy = 0.0
+
+        vx = max(min(vx, precision_land.prev_vx + MAX_DELTA),
+                precision_land.prev_vx - MAX_DELTA)
+
+        vy = max(min(vy, precision_land.prev_vy + MAX_DELTA),
+                precision_land.prev_vy - MAX_DELTA)
+
+        precision_land.prev_vx = vx
+        precision_land.prev_vy = vy
+
         XY_THRESH = 0.05      # 5 cm
         STABLE_TIME = 0.4     # seconds
         allow_angle = angle_total < ANGLE_DESCEND
