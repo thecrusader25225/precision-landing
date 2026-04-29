@@ -20,10 +20,18 @@ sock.setblocking(False)
 # -----------------------------
 KP_MOVE = 0.15              # proportional gain
 MAX_SPEED = 0.25             # m/s clamp
-DESCENT_RATE = 0.15         # m/s downward
-ANGLE_DESCEND = 0.174533    #10 deg
 LAND_HEIGHT = 0.5           # meters
 DEADBAND = 0.05             # 5 cm deadband
+
+#----adaptive angle thresholds for descent gating-----
+# ANGLE_DESCEND = 0.174533    #10 deg
+ANGLE_LOW  = math.radians(5.0)   # at ≤ 1m
+ANGLE_HIGH = math.radians(15.0)  # at ≥ 2m
+
+#---adaptive descent-----
+DESCENT_RATE = 0.15         # m/s downward
+DESCENT_MIN = 0.07
+DESCENT_MAX = 0.20
 
 async def yaw_align(drone):
     print("Starting yaw alignment...")
@@ -287,9 +295,7 @@ async def precision_land(drone):
         STABLE_TIME = 0.4     # seconds
         # allow_angle = angle_total < ANGLE_DESCEND
 
-        # --- angle gating vs height ---
-        ANGLE_LOW  = math.radians(5.0)   # at ≤ 1m
-        ANGLE_HIGH = math.radians(15.0)  # at ≥ 2m
+ 
 
         if z_cam <= 1.0:
             angle_thresh = ANGLE_LOW
@@ -302,7 +308,7 @@ async def precision_land(drone):
 
         allow_angle = angle_total < angle_thresh
 
-        allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
+        # allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
         if f72 < 0.5:
             vz = 0
         elif allow_angle:
@@ -310,6 +316,8 @@ async def precision_land(drone):
                 stable_since = time.time()
             elif time.time() - stable_since > STABLE_TIME:
                 vz = DESCENT_RATE
+                #z_norm = max(0.0, min(1.0, z_cam / 2.0))
+                #vz = DESCENT_MIN + (DESCENT_MAX - DESCENT_MIN) * z_norm
                 print("Stable angle → descending")
             else:
                 vz = 0.0

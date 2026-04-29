@@ -21,15 +21,14 @@ sock.setblocking(False)
 KP_MOVE = 0.15              # proportional gain
 MAX_SPEED = 0.25             # m/s clamp
 DESCENT_RATE = 0.15         # m/s downward
-ANGLE_DESCEND = 0.174533    #10 deg
-LAND_HEIGHT = 0.5           # meters
+ANGLE_DESCEND = math.radians(20)    
+LAND_HEIGHT = 1           # meters
 DEADBAND = 0.05             # 5 cm deadband
-
 async def yaw_align(drone):
     print("Starting yaw alignment...")
 
     ALIGN_THRESH = math.radians(5)
-    STABLE_TIME = 1.0  # seconds to hold alignment
+    STABLE_TIME = 0.5  # seconds to hold alignment
 
     aligned_since = None
 
@@ -193,10 +192,7 @@ async def precision_land(drone):
         x_cam /= 100.0
         y_cam /= 100.0
         z_cam /= 100.0
-        if z_cam < 0.4 and z_cam >0.1:
-            print("Switching to LAND mode")
-            await drone.action.land()
-            return
+
         # -----------------------------
         # OpenCV camera → UAV BODY frame
         # Assumes:
@@ -205,6 +201,14 @@ async def precision_land(drone):
         # -----------------------------
         x_body = -y_cam - 0.035  # forward/back
         y_body = x_cam   # right/left
+
+        DEADBAND = 0.02 + 0.03 * min(1.0, z_cam / 1.5) # dynamic deadband: 2 cm base + 3 cm scaling with altitude
+
+        error_mag = math.sqrt(x_body**2 + y_body**2)
+        if z_cam < 0.7 and z_cam >0.1 and error_mag < 0.1:
+            print("Switching to LAND mode")
+            await drone.action.land()
+            return
 
         # Noise filter
         if abs(x_body) > 1.5 or abs(y_body) > 1.5 or z_cam > 3:
@@ -222,7 +226,8 @@ async def precision_land(drone):
         if f72 < 0.5:
             x_body = last_x
             y_body = last_y
-            # z_cam = last_z   # optional but useful
+            z_cam = last_z   
+            vz = 0
             print("SHORT LOSS → continuing")
         # -----------------------------
         # Deadband
@@ -242,7 +247,10 @@ async def precision_land(drone):
         # Proportional velocity control
         # -----------------------------
         # dynamic gain
-        kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
+        # kp_dynamic = KP_MOVE * min(1.0, z_cam / 2.0)
+
+        #invert dynamic gain
+        kp_dynamic = KP_MOVE * max(0.6, min(1.2, 2.0 / (z_cam + 0.3)))
 
         vx = kp_dynamic * x_body
         vy = kp_dynamic * y_body
@@ -280,20 +288,35 @@ async def precision_land(drone):
         vy = max(min(vy, precision_land.prev_vy + MAX_DELTA),
                 precision_land.prev_vy - MAX_DELTA)
 
+        # MIN SPEED
+        MIN_V = 0.035
+
+        if abs(x_body) > DEADBAND and abs(vx) < MIN_V:
+            vx = math.copysign(MIN_V, x_body)
+
+        if abs(y_body) > DEADBAND and abs(vy) < MIN_V:
+            vy = math.copysign(MIN_V, y_body)
+
         precision_land.prev_vx = vx
         precision_land.prev_vy = vy
 
-        XY_THRESH = 0.05      # 5 cm
+        # XY_THRESH = 0.05      # 5 cm
         STABLE_TIME = 0.4     # seconds
         allow_angle = angle_total < ANGLE_DESCEND
-        allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
+        # allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
         if f72 < 0.5:
             vz = 0
         elif allow_angle:
             if stable_since is None:
                 stable_since = time.time()
             elif time.time() - stable_since > STABLE_TIME:
-                vz = DESCENT_RATE
+                # vz = DESCENT_RATE
+                if z_cam > 2.0:
+                    vz = 0.10
+                elif z_cam > 1.0:
+                    vz = 0.08
+                else:
+                    vz = 0.07
                 print("Stable angle → descending")
             else:
                 vz = 0.0
@@ -380,13 +403,13 @@ async def run():
         )
         await asyncio.sleep(0.1)
         
-    if not tag_seen:
-        await circular_search(drone)
+    #if not tag_seen:
+        #await circular_search(drone)
 
     await asyncio.sleep(1)
     print("Running yaw_align")
     #Run yaw alignment
-    await yaw_align(drone)
+    # await yaw_align(drone)
     print("Run precision_land")
     # Run landing
     await precision_land(drone)
