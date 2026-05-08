@@ -122,8 +122,9 @@ while True:
     if sample is None:
         continue
     now = time.time()
-    if now - last_process_time < FRAME_TIME:
-        continue   # <-- HARD DROP 
+    #if now - last_process_time < FRAME_TIME:
+        #continue   # <-- HARD DROP 
+    #last_process_time = now
     buf = sample.get_buffer()
     caps = sample.get_caps()
     structure = caps.get_structure(0)
@@ -137,7 +138,47 @@ while True:
 
     frame = np.frombuffer(mapinfo.data, dtype=np.uint8)
     frame = frame.reshape((h, w))
-    buf.unmap(mapinfo)
+
+    def detect_flashlight(frame):
+        blurred = cv2.GaussianBlur(frame, (15, 15), 0)
+
+        _, thresh = cv2.threshold(
+            blurred,
+            245,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+        contours, _ = cv2.findContours(
+            thresh,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        if len(contours) == 0:
+            return 0.0, 0.0, 0.0
+
+        largest = max(contours, key=cv2.contourArea)
+
+        area = cv2.contourArea(largest)
+
+        if area < 40:
+            return 0.0, 0.0, 0.0
+
+        M = cv2.moments(largest)
+
+        if M["m00"] == 0:
+            return 0.0, 0.0, 0.0
+
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+
+        # normalize to image center
+        x_err = (cx - w/2) / (w/2)
+        y_err = (cy - h/2) / (h/2)
+
+        return 1.0, x_err, y_err
+
 
     # -----------------------------
     # ARUCO TRACKING (UNCHANGED)
@@ -167,6 +208,8 @@ while True:
         return (x, y, z)
 
     tag72 = valid(tag72)
+    bfound, bx, by = detect_flashlight(frame)
+    buf.unmap(mapinfo)
     tagX  = valid(tagX)
     # -----------------------------
     # SEND UDP
@@ -184,10 +227,11 @@ while True:
         f2, x2, y2, z2 = 0.0, 0.0, 0.0, 0.0
 
     data = struct.pack(
-        "Iffffffff",
+        "Ifffffffffff",
         packet_id,
         f1, x1, y1, z1,
-        f2, x2, y2, z2
+        f2, x2, y2, z2,
+        bfound, bx, by
     )
     yaw_error=0
     if f1 > 0.5 and f2 > 0.5:
@@ -202,7 +246,7 @@ while True:
       #  print("Saved debug frame")
        # saved = True
     sock.sendto(data, (UDP_IP, UDP_PORT))
-    print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}")
+    print(f"72: {f1}, {x1} {y1} {z1}\n{yaw_error} deg\nX: {f2}, {x2} {y2} {z2}\nFlashlight: {bfound}, {bx} {by}")
     elapsed = time.time() - loop_start
     if elapsed < FRAME_TIME:
         time.sleep(FRAME_TIME - elapsed)

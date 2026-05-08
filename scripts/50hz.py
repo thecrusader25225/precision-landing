@@ -47,7 +47,7 @@ async def yaw_align(drone):
             await asyncio.sleep(0.02)
             continue
 
-        packet_id, f72, x72, y72, z72, fX, xX, yX, zX = struct.unpack("Iffffffff", latest)
+        packet_id, f72, x72, y72, z72, fX, xX, yX, zX, bfound, bx, by = struct.unpack("Ifffffffffff", latest)
         print(f"id: ",packet_id,"Tag72: ", f72, x72, y72, z72,"TagX: ",fX, xX, yX, zX )
         # need both tags
         if not (f72 > 0.5 and fX > 0.5):
@@ -107,7 +107,7 @@ async def circular_search(drone):
                 break
 
         if latest is not None:
-            packet_id, f72, x72, y72, z72, *_ = struct.unpack("Iffffffff", latest)
+            packet_id, f72, x72, y72, z72, *_ = struct.unpack("Ifffffffffff", latest)
 
             if f72 >= 0.5:
                 seen_count += 1
@@ -138,7 +138,7 @@ async def circular_search(drone):
         vx = min(vx, MAX_VX)
 
         vy = 0.0
-        vz = 0.03
+        vz = 0.01
 
         # yaw must scale stronger here
         yaw_rate = 10.0 + 40.0 * vx
@@ -152,7 +152,69 @@ async def circular_search(drone):
 
         await asyncio.sleep(0.02)
 
+# BEACON APPROACH
+async def acquire_beacon(drone):
 
+    print("Starting beacon acquisition")
+
+    KP = 0.25
+    MAX_V = 0.15
+
+    stable_since = None
+
+    while True:
+
+        latest = None
+
+        while True:
+            try:
+                data, _ = sock.recvfrom(1024)
+                latest = data
+            except BlockingIOError:
+                break
+
+        if latest is None:
+            await asyncio.sleep(0.02)
+            continue
+
+        packet_id, f72, x72, y72, z72,fX, xX, yX, zX, bfound, bx, by = struct.unpack("Ifffffffffff", latest)
+
+        if bfound < 0.5:
+            print("No beacon")
+            await asyncio.sleep(0.02)
+            continue
+
+        # image → body mapping
+        vx = -by * KP
+        vy =  bx * KP
+
+        vx = max(min(vx, MAX_V), -MAX_V)
+        vy = max(min(vy, MAX_V), -MAX_V)
+
+        print(f"Beacon vx:{vx:.2f} vy:{vy:.2f}")
+
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(vx, vy, 0.0, 0.0)
+        )
+
+        centered = (
+            abs(bx) < 0.08 and
+            abs(by) < 0.08
+        )
+
+        if centered:
+
+            if stable_since is None:
+                stable_since = time.time()
+
+            elif time.time() - stable_since > 1.0:
+                print("Beacon centered")
+                return
+
+        else:
+            stable_since = None
+
+        await asyncio.sleep(0.02)
 # -----------------------------
 # PRECISION LANDING LOOP
 # -----------------------------
@@ -176,7 +238,7 @@ async def precision_land(drone):
             await asyncio.sleep(0.02)
             continue
 
-        packet_id, f72, x72, y72, z72,fX, xX, yX, zX  = struct.unpack("Iffffffff", latest)
+        packet_id, f72, x72, y72, z72,fX, xX, yX, zX,bfound, bx, by  = struct.unpack("Ifffffffffff", latest)
         
         
         print(f"TAG72: ",packet_id, f72, x72, y72, z72)
@@ -199,13 +261,13 @@ async def precision_land(drone):
         # - Downward-facing camera
         # - Image top aligned with drone nose
         # -----------------------------
-        x_body = -y_cam - 0.035  # forward/back
+        x_body = -y_cam - 0.055  # forward/back
         y_body = x_cam   # right/left
 
         DEADBAND = 0.02 + 0.03 * min(1.0, z_cam / 1.5) # dynamic deadband: 2 cm base + 3 cm scaling with altitude
 
         error_mag = math.sqrt(x_body**2 + y_body**2)
-        if z_cam < 0.7 and z_cam >0.1 and error_mag < 0.1:
+        if z_cam < 0.71 and z_cam >0.1 and error_mag < 0.1:
             print("Switching to LAND mode")
             await drone.action.land()
             return
@@ -227,7 +289,7 @@ async def precision_land(drone):
             x_body = last_x
             y_body = last_y
             z_cam = last_z   
-            vz = 0
+            
             print("SHORT LOSS → continuing")
         # -----------------------------
         # Deadband
@@ -301,25 +363,32 @@ async def precision_land(drone):
         precision_land.prev_vy = vy
 
         # XY_THRESH = 0.05      # 5 cm
-        STABLE_TIME = 0.4     # seconds
+        STABLE_TIME = 1     # seconds
         allow_angle = angle_total < ANGLE_DESCEND
+        lateral_speed = math.sqrt(vx**2 + vy**2)
         # allow_xy    = abs(x_body) < XY_THRESH and abs(y_body) < XY_THRESH
         if f72 < 0.5:
             vz = 0
         elif allow_angle:
-            if stable_since is None:
-                stable_since = time.time()
-            elif time.time() - stable_since > STABLE_TIME:
-                # vz = DESCENT_RATE
-                if z_cam > 2.0:
-                    vz = 0.10
-                elif z_cam > 1.0:
-                    vz = 0.08
-                else:
-                    vz = 0.07
-                print("Stable angle → descending")
-            else:
+            if lateral_speed > 0.08:
                 vz = 0.0
+                stable_since = None
+            else:
+                if stable_since is None:
+                    stable_since = time.time()
+                elif time.time() - stable_since > STABLE_TIME:
+                    # vz = DESCENT_RATE
+                    if z_cam > 2.0:
+                        vz = 0.10
+                        print("Stable angle → descending")
+                    elif z_cam > 0.7:
+                        vz = 0.08
+                        print("Stable angle → descending")
+                    else:
+                        vz = 0
+                        print("Stable angle, waiting for LAND")
+                else:
+                    vz = 0.0
         else:
             stable_since = None
             vz = 0.0
@@ -370,7 +439,7 @@ async def run():
     while time.time() - start < 2.0:
         try:
             data, _ = sock.recvfrom(1024)
-            packet_id, f72, *_ = struct.unpack("Iffffffff", data)
+            packet_id, f72, *_ = struct.unpack("Ifffffffffff", data)
             if f72 >= 0.5:
                 tag_seen = True
                 break
@@ -390,7 +459,7 @@ async def run():
         )
 
     await asyncio.sleep(0.1)
-
+    
     # Start offboard mode
     await drone.offboard.start()
     print("Offboard mode started")
@@ -406,10 +475,16 @@ async def run():
     #if not tag_seen:
         #await circular_search(drone)
 
+    print("Running beacon acquisition")
+
+    await acquire_beacon(drone)
+
+    print("Beacon centered")
+
     await asyncio.sleep(1)
     print("Running yaw_align")
     #Run yaw alignment
-    # await yaw_align(drone)
+    await yaw_align(drone)
     print("Run precision_land")
     # Run landing
     await precision_land(drone)
